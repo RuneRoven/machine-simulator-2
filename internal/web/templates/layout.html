@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - Machine Simulator</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #0f1117;
+            --bg-secondary: #1a1d27;
+            --bg-card: #222632;
+            --bg-hover: #2a2e3d;
+            --border: #333848;
+            --text-primary: #e4e6ed;
+            --text-secondary: #8b90a0;
+            --text-muted: #5c6070;
+            --accent: #4f8ff7;
+            --accent-hover: #3a7de6;
+            --green: #34d399;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --orange: #fb923c;
+            --gray: #6b7280;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .layout {
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            padding: 20px 0;
+            position: fixed;
+            width: 220px;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-brand {
+            padding: 0 20px 24px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+
+        .sidebar-brand h1 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+        }
+
+        .sidebar-brand small {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .sidebar nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+
+        .sidebar nav a:hover,
+        .sidebar nav a.active {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+
+        .sidebar nav a.active {
+            border-left: 3px solid var(--accent);
+            padding-left: 17px;
+        }
+
+        .nav-icon {
+            width: 18px;
+            text-align: center;
+            font-size: 15px;
+        }
+
+        .ws-status {
+            position: absolute;
+            bottom: 16px;
+            left: 20px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .ws-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+
+        .ws-dot.connected {
+            background: var(--green);
+        }
+
+        /* Main content */
+        .main {
+            margin-left: 220px;
+            padding: 28px 32px;
+        }
+
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-header h2 {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .page-header p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Cards */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px;
+            transition: border-color 0.15s;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+        }
+
+        .card a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .card-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        /* State dots */
+        .state-dots {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .state-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: default;
+        }
+
+        .state-dot[title] { cursor: help; }
+
+        .state-dot.RUNNING     { background: var(--green); }
+        .state-dot.IDLE        { background: var(--gray); }
+        .state-dot.FAULT       { background: var(--red); }
+        .state-dot.MAINTENANCE { background: var(--yellow); }
+        .state-dot.STOPPED     { background: var(--orange); }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 22px;
+            min-width: 140px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        tr:hover td {
+            background: var(--bg-hover);
+        }
+
+        /* State badge */
+        .state-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .state-badge.RUNNING     { background: rgba(52,211,153,0.15); color: var(--green); }
+        .state-badge.IDLE        { background: rgba(107,114,128,0.2); color: var(--gray); }
+        .state-badge.FAULT       { background: rgba(248,113,113,0.15); color: var(--red); }
+        .state-badge.MAINTENANCE { background: rgba(251,191,36,0.15); color: var(--yellow); }
+        .state-badge.STOPPED     { background: rgba(251,146,60,0.15); color: var(--orange); }
+
+        /* Order status badges */
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-badge.CREATED     { background: rgba(107,114,128,0.2); color: var(--gray); }
+        .status-badge.RELEASED    { background: rgba(79,143,247,0.15); color: var(--accent); }
+        .status-badge.IN_PROGRESS { background: rgba(52,211,153,0.15); color: var(--green); }
+        .status-badge.CLOSED      { background: rgba(107,114,128,0.3); color: var(--text-secondary); }
+        .status-badge.CANCELLED   { background: rgba(248,113,113,0.15); color: var(--red); }
+
+        /* Buffer bar */
+        .buffer-bar-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .buffer-bar {
+            flex: 1;
+            height: 12px;
+            background: var(--bg-primary);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .buffer-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 6px;
+            transition: width 0.3s;
+        }
+
+        .buffer-fill.warning { background: var(--yellow); }
+        .buffer-fill.critical { background: var(--red); }
+
+        .buffer-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            min-width: 50px;
+            text-align: right;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 7px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-danger {
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .btn-danger:hover { background: rgba(248,113,113,0.1); }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            max-width: 500px;
+        }
+
+        .form-card h3 {
+            font-size: 15px;
+            margin-bottom: 16px;
+        }
+
+        /* Slider */
+        .slider-group {
+            margin-bottom: 20px;
+        }
+
+        .slider-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .slider-value {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        /* Tags table */
+        .tags-table { margin-top: 12px; }
+
+        .tags-table td:first-child {
+            font-weight: 600;
+            color: var(--text-secondary);
+            width: 200px;
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 28px;
+        }
+
+        .section h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* Detail info */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .detail-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+        }
+
+        .detail-item .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        /* Link */
+        a.link {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a.link:hover { text-decoration: underline; }
+
+        /* Toast */
+        #toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 9999;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            animation: fadeIn 0.2s;
+            max-width: 350px;
+        }
+
+        .toast.error { border-color: var(--red); color: var(--red); }
+        .toast.success { border-color: var(--green); color: var(--green); }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <h1>Machine Simulator</h1>
+                <small>Factory Monitor</small>
+            </div>
+            <nav>
+                <a href="/" {{if not .Page}}class="active"{{end}}>
+                    <span class="nav-icon">&#9632;</span> Dashboard
+                </a>
+                <a href="/orders" {{if eq .Page "orders"}}class="active"{{end}}>
+                    <span class="nav-icon">&#9776;</span> Orders
+                </a>
+                <a href="/simulation" {{if eq .Page "simulation"}}class="active"{{end}}>
+                    <span class="nav-icon">&#9881;</span> Simulation
+                </a>
+            </nav>
+            <div class="ws-status">
+                <span class="ws-dot" id="ws-indicator"></span>
+                <span id="ws-label">Disconnected</span>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="main">
+            <div class="page-header">
+                <h2>{{.Title}}</h2>
+            </div>
+
+            <div id="toast-container"></div>
+
+            <!-- ==================== DASHBOARD ==================== -->
+            {{if not .Page}}
+            <div class="stats-bar" id="dashboard-stats"
+                 hx-get="/" hx-trigger="every 5s" hx-select="#dashboard-stats" hx-target="#dashboard-stats" hx-swap="outerHTML">
+                <div class="stat-card">
+                    <div class="stat-value">{{.Stats.LineCount}}</div>
+                    <div class="stat-label">Production Lines</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{.Stats.MachineCount}}</div>
+                    <div class="stat-label">Machines</div>
+                </div>
+            </div>
+
+            <div class="card-grid" id="line-cards"
+                 hx-get="/" hx-trigger="every 3s" hx-select="#line-cards" hx-target="#line-cards" hx-swap="outerHTML">
+                {{range .Lines}}
+                <div class="card">
+                    <a href="/lines/{{.InstanceID}}">
+                        <div class="card-title">{{.InstanceID}}</div>
+                        <div class="card-subtitle">{{.TemplateName}}</div>
+                        <div class="card-meta">Domain: {{.Domain}} | Machines: {{len .MachineIDs}}</div>
+                        <div class="state-dots" id="line-dots-{{.InstanceID}}">
+                            {{range .MachineIDs}}
+                            <span class="state-dot machine-dot" data-machine="{{.}}" title="{{.}}"></span>
+                            {{end}}
+                        </div>
+                    </a>
+                </div>
+                {{else}}
+                <div class="card">
+                    <div class="card-title">No lines configured</div>
+                    <div class="card-subtitle">Start the simulator to see production lines.</div>
+                </div>
+                {{end}}
+            </div>
+            {{end}}
+
+            <!-- ==================== LINE DETAIL ==================== -->
+            {{if eq .Page "line-detail"}}
+            <p style="margin-bottom:16px;"><a href="/" class="link">&larr; Back to Dashboard</a></p>
+
+            <div class="detail-grid">
+                <div class="detail-item">
+                    <div class="label">Template</div>
+                    <div class="value">{{.Line.TemplateName}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="label">Domain</div>
+                    <div class="value">{{.Line.Domain}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="label">Machines</div>
+                    <div class="value">{{len .Line.MachineIDs}}</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Machines</h3>
+                <div id="line-machines"
+                     hx-get="/lines/{{.Line.InstanceID}}" hx-trigger="every 2s" hx-select="#line-machines" hx-target="#line-machines" hx-swap="outerHTML">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Role</th>
+                                <th>State</th>
+                                <th>OPC-UA Port</th>
+                                <th>Order</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Machines}}
+                            <tr>
+                                <td><a href="/machines/{{.ID}}" class="link">{{.ID}}</a></td>
+                                <td>{{.Type}}</td>
+                                <td>{{.Role}}</td>
+                                <td><span class="state-badge {{.State}}">{{.State}}</span></td>
+                                <td style="font-family:monospace;">{{if .OPCUAPort}}{{.OPCUAPort}}{{else}}<span style="color:var(--text-muted)">-</span>{{end}}</td>
+                                <td>{{if .Order}}{{.Order}}{{else}}<span style="color:var(--text-muted)">-</span>{{end}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Buffers</h3>
+                <div id="line-buffers"
+                     hx-get="/lines/{{.Line.InstanceID}}" hx-trigger="every 2s" hx-select="#line-buffers" hx-target="#line-buffers" hx-swap="outerHTML">
+                    {{range .Buffers}}
+                    <div style="margin-bottom:10px;">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">{{.ID}}</div>
+                        <div class="buffer-bar-wrapper">
+                            <div class="buffer-bar">
+                                <div class="buffer-fill{{if eq .Level "critical"}} critical{{else if eq .Level "warning"}} warning{{end}}"
+                                     style="width: {{.Pct}}%"></div>
+                            </div>
+                            <span class="buffer-label">{{.Count}} / {{.Capacity}}</span>
+                        </div>
+                    </div>
+                    {{else}}
+                    <p style="color:var(--text-muted); font-size:13px;">No buffers on this line.</p>
+                    {{end}}
+                </div>
+            </div>
+
+            {{if .Line.Recipes}}
+            <div class="section">
+                <h3>Recipes</h3>
+                <table>
+                    <thead>
+                        <tr><th>Product ID</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                        {{range .Line.Recipes}}
+                        <tr>
+                            <td>{{.ProductID}}</td>
+                            <td>{{.Description}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{end}}
+            {{end}}
+
+            <!-- ==================== MACHINE DETAIL ==================== -->
+            {{if eq .Page "machine-detail"}}
+            <p style="margin-bottom:16px;"><a href="javascript:history.back()" class="link">&larr; Back</a></p>
+
+            <div id="machine-detail"
+                 hx-get="/machines/{{.MachineID}}" hx-trigger="every 2s" hx-select="#machine-detail" hx-target="#machine-detail" hx-swap="outerHTML">
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <div class="label">Type</div>
+                        <div class="value">{{.MachineType}}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="label">Role</div>
+                        <div class="value">{{.Role}}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="label">State</div>
+                        <div class="value"><span class="state-badge {{.State}}">{{.State}}</span></div>
+                    </div>
+                    {{if .OPCUAPort}}
+                    <div class="detail-item">
+                        <div class="label">OPC-UA</div>
+                        <div class="value" style="font-family:monospace;font-size:13px;">opc.tcp://localhost:{{.OPCUAPort}}</div>
+                    </div>
+                    {{end}}
+                    <div class="detail-item">
+                        <div class="label">Order</div>
+                        <div class="value">{{if .OrderID}}{{.OrderID}}{{else}}<span style="color:var(--text-muted)">None</span>{{end}}</div>
+                    </div>
+                    {{if .OperationID}}
+                    <div class="detail-item">
+                        <div class="label">Operation</div>
+                        <div class="value">{{.OperationID}}</div>
+                    </div>
+                    {{end}}
+                </div>
+
+                <div class="section">
+                    <h3>Commands</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-primary"
+                                hx-post="/api/machines/{{.MachineID}}/command"
+                                hx-vals='{"command":"START"}'
+                                hx-headers='{"Content-Type":"application/json"}'
+                                hx-swap="none">Start</button>
+                        <button class="btn"
+                                hx-post="/api/machines/{{.MachineID}}/command"
+                                hx-vals='{"command":"STOP"}'
+                                hx-headers='{"Content-Type":"application/json"}'
+                                hx-swap="none">Stop</button>
+                        <button class="btn"
+                                hx-post="/api/machines/{{.MachineID}}/command"
+                                hx-vals='{"command":"RESET"}'
+                                hx-headers='{"Content-Type":"application/json"}'
+                                hx-swap="none">Reset</button>
+                        <button class="btn btn-danger"
+                                hx-post="/api/machines/{{.MachineID}}/command"
+                                hx-vals='{"command":"FAULT"}'
+                                hx-headers='{"Content-Type":"application/json"}'
+                                hx-swap="none">Fault</button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Tags</h3>
+                    <table class="tags-table">
+                        <thead>
+                            <tr><th>Node ID</th><th>Tag</th><th>Display Name</th><th>Value</th><th>Unit</th></tr>
+                        </thead>
+                        <tbody>
+                            {{range .TagRows}}
+                            <tr>
+                                <td style="color:var(--text-muted);font-family:monospace;">{{.NodeIDStr}}</td>
+                                <td style="font-family:monospace;">{{.Name}}</td>
+                                <td>{{.DisplayName}}</td>
+                                <td>{{.Value}}</td>
+                                <td style="color:var(--text-muted);">{{.Unit}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {{end}}
+
+            <!-- ==================== ORDERS ==================== -->
+            {{if eq .Page "orders"}}
+            <div class="form-card">
+                <h3>Create Order</h3>
+                <form hx-post="/api/orders"
+                      hx-headers='{"Content-Type":"application/json"}'
+                      hx-swap="none"
+                      hx-on::after-request="if(event.detail.successful) { this.reset(); setTimeout(()=>location.reload(), 500); }">
+                    <div class="form-group">
+                        <label>Line Instance</label>
+                        <select name="line_instance_id" id="order-line" required>
+                            <option value="">Select a line...</option>
+                            {{range .Lines}}
+                            <option value="{{.InstanceID}}" data-template="{{.TemplateName}}">{{.InstanceID}} ({{.TemplateName}})</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Product</label>
+                        <select name="product_id" id="order-product" required>
+                            <option value="">Select a product...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Planned Quantity</label>
+                        <input type="number" name="planned_qty" min="1" max="10000" value="100" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Priority (1-100)</label>
+                        <input type="number" name="priority" min="1" max="100" value="50">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create Order</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h3>Recent Orders</h3>
+                <div id="orders-table"
+                     hx-get="/orders" hx-trigger="every 3s" hx-select="#orders-table" hx-target="#orders-table" hx-swap="outerHTML">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Product</th>
+                                <th>Line</th>
+                                <th>Status</th>
+                                <th>Planned</th>
+                                <th>Good</th>
+                                <th>Scrap</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Orders}}
+                            <tr>
+                                <td style="font-family:monospace;font-size:11px;">{{.ID}}</td>
+                                <td>{{.ProductID}}</td>
+                                <td>{{.LineInstanceID}}</td>
+                                <td><span class="status-badge {{.Status}}">{{.Status}}</span></td>
+                                <td>{{.PlannedQty}}</td>
+                                <td>{{.GoodQty}}</td>
+                                <td>{{.ScrapQty}}</td>
+                            </tr>
+                            {{else}}
+                            <tr><td colspan="7" style="color:var(--text-muted);text-align:center;">No orders found.</td></tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <script>
+                // Product list filtering based on selected line
+                (function() {
+                    var products = {
+                        {{range $tmpl, $prods := .Products}}
+                        "{{$tmpl}}": [{{range $prods}}"{{.}}",{{end}}],
+                        {{end}}
+                    };
+
+                    var lineSelect = document.getElementById('order-line');
+                    var productSelect = document.getElementById('order-product');
+
+                    if (lineSelect && productSelect) {
+                        lineSelect.addEventListener('change', function() {
+                            var opt = lineSelect.options[lineSelect.selectedIndex];
+                            var tmpl = opt ? opt.getAttribute('data-template') : '';
+                            productSelect.innerHTML = '<option value="">Select a product...</option>';
+                            if (tmpl && products[tmpl]) {
+                                products[tmpl].forEach(function(p) {
+                                    var o = document.createElement('option');
+                                    o.value = p;
+                                    o.textContent = p;
+                                    productSelect.appendChild(o);
+                                });
+                            }
+                        });
+                    }
+
+                    // htmx form encoding: send as JSON
+                    document.body.addEventListener('htmx:configRequest', function(e) {
+                        if (e.detail.verb === 'post' && e.detail.path === '/api/orders') {
+                            var form = e.detail.elt;
+                            if (form.tagName === 'FORM') {
+                                var data = {};
+                                var fd = new FormData(form);
+                                fd.forEach(function(v, k) {
+                                    if (k === 'planned_qty' || k === 'priority') {
+                                        data[k] = parseInt(v, 10);
+                                    } else {
+                                        data[k] = v;
+                                    }
+                                });
+                                // get line template
+                                var lineOpt = form.querySelector('#order-line');
+                                if (lineOpt) {
+                                    var sel = lineOpt.options[lineOpt.selectedIndex];
+                                    if (sel) data['line_template'] = sel.getAttribute('data-template') || '';
+                                }
+                                e.detail.headers['Content-Type'] = 'application/json';
+                                e.detail.body = JSON.stringify(data);
+                            }
+                        }
+                    });
+                })();
+            </script>
+            {{end}}
+
+            <!-- ==================== SIMULATION ==================== -->
+            {{if eq .Page "simulation"}}
+            <div class="detail-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{.MachineCount}}</div>
+                    <div class="stat-label">Machines</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{.LineCount}}</div>
+                    <div class="stat-label">Lines</div>
+                </div>
+            </div>
+
+            <div class="form-card" style="max-width:600px;">
+                <h3>Simulation Parameters</h3>
+
+                <div class="slider-group">
+                    <label>
+                        Time Scale
+                        <span class="slider-value" id="ts-display">{{printf "%.1f" .TimeScale}}x</span>
+                    </label>
+                    <input type="range" id="ts-slider" min="0.1" max="10" step="0.1" value="{{.TimeScale}}"
+                           oninput="document.getElementById('ts-display').textContent = parseFloat(this.value).toFixed(1) + 'x'">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px;">
+                        <span>0.1x (slow)</span><span>10x (fast)</span>
+                    </div>
+                    <button class="btn btn-primary" style="margin-top:10px;"
+                            onclick="setTimescale()">Apply Time Scale</button>
+                </div>
+
+                <div class="slider-group">
+                    <label>
+                        Random Factor
+                        <span class="slider-value" id="rf-display">{{printf "%.2f" .RandomFactor}}</span>
+                    </label>
+                    <input type="range" id="rf-slider" min="0" max="1" step="0.01" value="{{.RandomFactor}}"
+                           oninput="document.getElementById('rf-display').textContent = parseFloat(this.value).toFixed(2)">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px;">
+                        <span>0 (deterministic)</span><span>1 (max variance)</span>
+                    </div>
+                    <button class="btn btn-primary" style="margin-top:10px;"
+                            onclick="setRandomFactor()">Apply Random Factor</button>
+                </div>
+            </div>
+
+            <script>
+                function setTimescale() {
+                    var val = parseFloat(document.getElementById('ts-slider').value);
+                    fetch('/api/simulation/timescale', {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({time_scale: val})
+                    }).then(function(r) {
+                        if (r.ok) showToast('Time scale set to ' + val.toFixed(1) + 'x', 'success');
+                        else showToast('Failed to set time scale', 'error');
+                    });
+                }
+
+                function setRandomFactor() {
+                    var val = parseFloat(document.getElementById('rf-slider').value);
+                    fetch('/api/simulation/random-factor', {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({random_factor: val})
+                    }).then(function(r) {
+                        if (r.ok) showToast('Random factor set to ' + val.toFixed(2), 'success');
+                        else showToast('Failed to set random factor', 'error');
+                    });
+                }
+            </script>
+            {{end}}
+
+        </main>
+    </div>
+
+    <!-- ==================== GLOBAL SCRIPTS ==================== -->
+    <script>
+        // Toast notifications
+        function showToast(msg, type) {
+            var container = document.getElementById('toast-container');
+            if (!container) return;
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + (type || '');
+            toast.textContent = msg;
+            container.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 3000);
+        }
+
+        // htmx response handling
+        document.body.addEventListener('htmx:responseError', function(e) {
+            showToast('Request failed: ' + e.detail.xhr.status, 'error');
+        });
+
+        document.body.addEventListener('htmx:afterRequest', function(e) {
+            if (e.detail.verb === 'post' && e.detail.successful && e.detail.pathInfo.requestPath.indexOf('/command') !== -1) {
+                showToast('Command sent', 'success');
+            }
+        });
+
+        // WebSocket connection with auto-reconnect
+        (function() {
+            var ws = null;
+            var reconnectDelay = 1000;
+            var maxDelay = 30000;
+            var indicator = document.getElementById('ws-indicator');
+            var label = document.getElementById('ws-label');
+
+            function connect() {
+                var proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+                ws = new WebSocket(proto + '//' + window.location.host + '/ws');
+
+                ws.onopen = function() {
+                    reconnectDelay = 1000;
+                    if (indicator) indicator.classList.add('connected');
+                    if (label) label.textContent = 'Connected';
+                };
+
+                ws.onclose = function() {
+                    if (indicator) indicator.classList.remove('connected');
+                    if (label) label.textContent = 'Reconnecting...';
+                    setTimeout(function() {
+                        reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
+                        connect();
+                    }, reconnectDelay);
+                };
+
+                ws.onerror = function() {
+                    ws.close();
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        var msg = JSON.parse(event.data);
+                        handleWSMessage(msg);
+                    } catch(e) {}
+                };
+            }
+
+            function handleWSMessage(msg) {
+                // Update machine state dots on dashboard
+                if (msg.type === 'machine.state_change' && msg.machine_id && msg.data) {
+                    var newState = '';
+                    if (typeof msg.data === 'object' && msg.data.new_state) {
+                        newState = msg.data.new_state;
+                    } else if (typeof msg.data === 'string') {
+                        newState = msg.data;
+                    }
+
+                    if (newState) {
+                        var dots = document.querySelectorAll('.machine-dot[data-machine="' + msg.machine_id + '"]');
+                        dots.forEach(function(dot) {
+                            dot.className = 'state-dot machine-dot ' + newState;
+                        });
+
+                        // Update state badge on machine detail page
+                        var badges = document.querySelectorAll('.state-badge');
+                        badges.forEach(function(badge) {
+                            var parent = badge.closest('#machine-detail');
+                            if (parent) {
+                                badge.className = 'state-badge ' + newState;
+                                badge.textContent = newState;
+                            }
+                        });
+                    }
+                }
+
+                // Order events - show toast
+                if (msg.type === 'order.created') {
+                    showToast('New order created', 'success');
+                }
+                if (msg.type === 'order.closed') {
+                    showToast('Order completed', 'success');
+                }
+
+                // Deadlock recovery
+                if (msg.type === 'line.deadlock_recovered') {
+                    showToast('Deadlock recovered on ' + (msg.line_id || 'line'), 'error');
+                }
+            }
+
+            connect();
+        })();
+
+        // Fetch initial machine states for dashboard dots
+        (function() {
+            var dots = document.querySelectorAll('.machine-dot');
+            if (dots.length === 0) return;
+
+            fetch('/api/machines')
+                .then(function(r) { return r.json(); })
+                .then(function(machines) {
+                    machines.forEach(function(m) {
+                        var dot = document.querySelector('.machine-dot[data-machine="' + m.id + '"]');
+                        if (dot) {
+                            dot.className = 'state-dot machine-dot ' + m.state;
+                        }
+                    });
+                })
+                .catch(function() {});
+        })();
+    </script>
+</body>
+</html>
