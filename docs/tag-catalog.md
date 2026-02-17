@@ -101,7 +101,7 @@ Source: `internal/machine/types/spot_welder.go`
 | `hold_time_ms` | 13 | Hold Time (ms) | Double | ms | Hold time after weld |
 | `electrode_temp_c` | 14 | Electrode Temp (°C) | Double | °C | Electrode temperature |
 | `water_flow_l_min` | 15 | Water Flow Rate (L/min) | Double | L/min | Cooling water flow rate |
-| `resistance_mohm` | 16 | Contact Resistance (mohm) | Double | mohm | Contact resistance |
+| `resistance_mohm` | 16 | Contact Resistance (mΩ) | Double | mohm | Contact resistance |
 | `expulsion_count` | 17 | Expulsion Count | Double | | Expulsion event count |
 | `weld_power_kw` | 18 | Welding Power (kW) | Double | kW | Welding power |
 | `cap_displacement_mm` | 19 | Cap Displacement (mm) | Double | mm | Cap tip displacement |
@@ -128,7 +128,7 @@ Source: `internal/machine/types/robot_welder.go`
 | `gas_flow_l_min` | 16 | Gas Flow Rate (L/min) | Double | L/min | Shielding gas flow rate |
 | `travel_speed_mm_s` | 17 | Travel Speed (mm/s) | Double | mm/s | Torch travel speed |
 | `weld_penetration_mm` | 18 | Weld Penetration (mm) | Double | mm | Weld penetration depth |
-| `torch_angle_deg` | 19 | Torch Angle (deg) | Double | deg | Torch angle |
+| `torch_angle_deg` | 19 | Torch Angle (°) | Double | deg | Torch angle |
 | `seam_tracking_offset_mm` | 20 | Seam Tracking Offset (mm) | Double | mm | Seam tracking offset |
 | `spatter_count` | 21 | Spatter Count | Double | | Weld spatter event count |
 
@@ -140,22 +140,22 @@ Source: `internal/machine/types/robot_pick_place.go`
 
 | Name | NodeID | DisplayName | DataType | Unit | Description |
 |------|--------|-------------|----------|------|-------------|
-| `joint1_angle` | 7 | Joint 1 Angle (deg) | Double | deg | Joint 1 angle |
-| `joint2_angle` | 8 | Joint 2 Angle (deg) | Double | deg | Joint 2 angle |
-| `joint3_angle` | 9 | Joint 3 Angle (deg) | Double | deg | Joint 3 angle |
-| `joint4_angle` | 10 | Joint 4 Angle (deg) | Double | deg | Joint 4 angle |
-| `joint5_angle` | 11 | Joint 5 Angle (deg) | Double | deg | Joint 5 angle |
-| `joint6_angle` | 12 | Joint 6 Angle (deg) | Double | deg | Joint 6 angle |
+| `joint1_angle` | 7 | Joint 1 Angle (°) | Double | deg | Joint 1 angle |
+| `joint2_angle` | 8 | Joint 2 Angle (°) | Double | deg | Joint 2 angle |
+| `joint3_angle` | 9 | Joint 3 Angle (°) | Double | deg | Joint 3 angle |
+| `joint4_angle` | 10 | Joint 4 Angle (°) | Double | deg | Joint 4 angle |
+| `joint5_angle` | 11 | Joint 5 Angle (°) | Double | deg | Joint 5 angle |
+| `joint6_angle` | 12 | Joint 6 Angle (°) | Double | deg | Joint 6 angle |
 | `tcp_x` | 13 | TCP X Position (mm) | Double | mm | Tool center point X position |
 | `tcp_y` | 14 | TCP Y Position (mm) | Double | mm | Tool center point Y position |
 | `tcp_z` | 15 | TCP Z Position (mm) | Double | mm | Tool center point Z position |
 | `gripper_force_n` | 16 | Gripper Force (N) | Double | N | Gripper force |
 | `vacuum_pressure_kpa` | 17 | Vacuum Pressure (kPa) | Double | kPa | Vacuum pressure for suction gripper |
-| `pick_accuracy_um` | 18 | Pick Accuracy (um) | Double | um | Pick position accuracy |
-| `place_accuracy_um` | 19 | Place Accuracy (um) | Double | um | Place position accuracy |
+| `pick_accuracy_um` | 18 | Pick Accuracy (µm) | Double | um | Pick position accuracy |
+| `place_accuracy_um` | 19 | Place Accuracy (µm) | Double | um | Place position accuracy |
 | `cycle_speed_pct` | 20 | Cycle Speed (%) | Double | % | Cycle speed percentage |
 | `payload_kg` | 21 | Payload Weight (kg) | Double | kg | Current payload weight |
-| `acceleration_m_s2` | 22 | Acceleration (m/s2) | Double | m/s2 | Acceleration |
+| `acceleration_m_s2` | 22 | Acceleration (m/s²) | Double | m/s2 | Acceleration |
 
 #### painting_booth
 
@@ -169,7 +169,7 @@ Source: `internal/machine/types/painting_booth.go`
 | `booth_humidity_pct` | 8 | Booth Humidity (%) | Double | % | Booth humidity |
 | `paint_flow_ml_min` | 9 | Paint Flow Rate (mL/min) | Double | mL/min | Paint flow rate |
 | `atomization_pressure_bar` | 10 | Atomization Pressure (bar) | Double | bar | Atomization air pressure |
-| `film_thickness_um` | 11 | Film Thickness (um) | Double | um | Paint film thickness |
+| `film_thickness_um` | 11 | Film Thickness (µm) | Double | um | Paint film thickness |
 | `overspray_pct` | 12 | Overspray (%) | Double | % | Overspray percentage |
 | `fan_speed_rpm` | 13 | Fan Speed (RPM) | Double | RPM | Exhaust fan speed |
 | `filter_pressure_drop_pa` | 14 | Filter Pressure Drop (Pa) | Double | Pa | Filter pressure drop |
@@ -177,8 +177,8 @@ Source: `internal/machine/types/painting_booth.go`
 | `cure_temp_c` | 16 | Cure Oven Temp (°C) | Double | °C | Cure oven temperature |
 | `conveyor_speed_m_min` | 17 | Conveyor Speed (m/min) | Double | m/min | Conveyor speed |
 | `paint_viscosity_cp` | 18 | Paint Viscosity (cP) | Double | cP | Paint viscosity |
-| `color_delta_e` | 19 | Color Deviation (dE) | Double | dE | Color deviation |
-| `booth_airflow_m3_h` | 20 | Booth Airflow (m3/h) | Double | m3/h | Booth airflow volume |
+| `color_delta_e` | 19 | Color Deviation (ΔE) | Double | dE | Color deviation |
+| `booth_airflow_m3_h` | 20 | Booth Airflow (m³/h) | Double | m3/h | Booth airflow volume |
 | `paint_waste_pct` | 21 | Paint Waste (%) | Double | % | Paint waste percentage |
 
 ---
@@ -196,7 +196,7 @@ Source: `internal/machine/types/smt_placement.go`
 | `placement_rate_cph` | 7 | Placement Rate (cph) | Double | cph | Component placement rate |
 | `nozzle_vacuum_kpa` | 8 | Nozzle Vacuum (kPa) | Double | kPa | Nozzle vacuum pressure |
 | `feeder_status_pct` | 9 | Feeder Availability (%) | Double | % | Feeder availability |
-| `placement_accuracy_um` | 10 | Placement Accuracy (um) | Double | um | Placement accuracy |
+| `placement_accuracy_um` | 10 | Placement Accuracy (µm) | Double | um | Placement accuracy |
 | `head_x_mm` | 11 | Head X Position (mm) | Double | mm | Head X position |
 | `head_y_mm` | 12 | Head Y Position (mm) | Double | mm | Head Y position |
 | `vision_score_pct` | 13 | Vision Score (%) | Double | % | Vision system alignment score |
@@ -206,7 +206,7 @@ Source: `internal/machine/types/smt_placement.go`
 | `board_temp_c` | 17 | Board Temp (°C) | Double | °C | Board temperature |
 | `tape_tension_n` | 18 | Tape Tension (N) | Double | N | Tape feeder tension |
 | `conveyor_width_mm` | 19 | Conveyor Width (mm) | Double | mm | Conveyor width setting |
-| `rotation_accuracy_deg` | 20 | Rotation Accuracy (deg) | Double | deg | Component rotation accuracy |
+| `rotation_accuracy_deg` | 20 | Rotation Accuracy (°) | Double | deg | Component rotation accuracy |
 | `pick_failure_count` | 21 | Pick Failure Count | Double | | Pick failure count |
 
 #### reflow_oven
@@ -243,7 +243,7 @@ Source: `internal/machine/types/wave_solder.go`
 |------|--------|-------------|----------|------|-------------|
 | `solder_pot_temp_c` | 7 | Solder Pot Temp (°C) | Double | °C | Solder pot temperature |
 | `wave_height_mm` | 8 | Wave Height (mm) | Double | mm | Solder wave height |
-| `flux_density_ml_m2` | 9 | Flux Density (mL/m2) | Double | mL/m2 | Flux density |
+| `flux_density_ml_m2` | 9 | Flux Density (mL/m²) | Double | mL/m2 | Flux density |
 | `conveyor_speed_m_min` | 10 | Conveyor Speed (m/min) | Double | m/min | Conveyor speed |
 | `preheat_top_temp_c` | 11 | Top Preheat Temp (°C) | Double | °C | Top preheat temperature |
 | `preheat_bottom_temp_c` | 12 | Bottom Preheat Temp (°C) | Double | °C | Bottom preheat temperature |
@@ -251,7 +251,7 @@ Source: `internal/machine/types/wave_solder.go`
 | `dross_level_pct` | 14 | Dross Level (%) | Double | % | Dross accumulation level |
 | `finger_clearance_mm` | 15 | Finger Clearance (mm) | Double | mm | Solder finger clearance |
 | `contact_time_s` | 16 | Contact Time (s) | Double | s | Board-wave contact time |
-| `board_angle_deg` | 17 | Board Angle (deg) | Double | deg | Board conveyor angle |
+| `board_angle_deg` | 17 | Board Angle (°) | Double | deg | Board conveyor angle |
 | `nitrogen_flow_l_min` | 18 | Nitrogen Flow (L/min) | Double | L/min | Nitrogen flow rate |
 | `pot_level_mm` | 19 | Pot Level (mm) | Double | mm | Solder pot level |
 | `bridge_defect_count` | 20 | Bridge Defect Count | Double | | Solder bridge defect count |
@@ -265,7 +265,7 @@ Source: `internal/machine/types/aoi_inspection.go`
 
 | Name | NodeID | DisplayName | DataType | Unit | Description |
 |------|--------|-------------|----------|------|-------------|
-| `inspection_speed_cm2_s` | 7 | Inspection Speed (cm2/s) | Double | cm2/s | Inspection speed |
+| `inspection_speed_cm2_s` | 7 | Inspection Speed (cm²/s) | Double | cm2/s | Inspection speed |
 | `camera_resolution_mp` | 8 | Camera Resolution (MP) | Double | MP | Camera resolution |
 | `lighting_intensity_lux` | 9 | Lighting Intensity (lux) | Double | lux | Lighting intensity |
 | `defect_count` | 10 | Defect Count | Double | | Defects detected |
@@ -330,7 +330,7 @@ Source: `internal/machine/types/sealing_machine.go`
 | `reject_count` | 17 | Reject Count | Double | | Rejected seals |
 | `vacuum_level_mbar` | 18 | Vacuum Level (mbar) | Double | mbar | Vacuum level for MAP |
 | `gas_flush_flow_l_min` | 19 | Gas Flush Flow (L/min) | Double | L/min | Gas flush flow rate |
-| `leak_rate_mbar_l_s` | 20 | Leak Rate (mbar*L/s) | Double | mbar*L/s | Leak rate |
+| `leak_rate_mbar_l_s` | 20 | Leak Rate (mbar·L/s) | Double | mbar*L/s | Leak rate |
 | `heater_power_pct` | 21 | Heater Power (%) | Double | % | Heater power percentage |
 
 #### labeling_machine
@@ -380,7 +380,7 @@ Source: `internal/machine/types/reactor_vessel.go`
 | `jacket_temp_c` | 15 | Jacket Temp (°C) | Double | °C | Jacket temperature |
 | `feed_rate_ml_min` | 16 | Feed Rate (mL/min) | Double | mL/min | Feed rate |
 | `off_gas_flow_l_min` | 17 | Off-Gas Flow (L/min) | Double | L/min | Off-gas flow rate |
-| `torque_nm` | 18 | Torque (N*m) | Double | N*m | Agitator torque |
+| `torque_nm` | 18 | Torque (N·m) | Double | N·m | Agitator torque |
 | `impeller_tip_speed_m_s` | 19 | Impeller Tip Speed (m/s) | Double | m/s | Impeller tip speed |
 | `redox_potential_mv` | 20 | Redox Potential (mV) | Double | mV | Redox potential |
 | `foam_level_pct` | 21 | Foam Level (%) | Double | % | Foam level |
@@ -417,7 +417,7 @@ Source: `internal/machine/types/capping_machine.go`
 
 | Name | NodeID | DisplayName | DataType | Unit | Description |
 |------|--------|-------------|----------|------|-------------|
-| `torque_nm` | 7 | Torque (N*m) | Double | N*m | Capping torque |
+| `torque_nm` | 7 | Torque (N·m) | Double | N·m | Capping torque |
 | `cap_position_accuracy_mm` | 8 | Cap Position Accuracy (mm) | Double | mm | Cap position accuracy |
 | `reject_rate_pct` | 9 | Reject Rate (%) | Double | % | Reject rate |
 | `feed_rate_caps_min` | 10 | Feed Rate (caps/min) | Double | caps/min | Cap feed rate |
@@ -449,16 +449,16 @@ Source: `internal/machine/types/profile_cutter.go`
 | `cut_length_mm` | 8 | Cut Length (mm) | Double | mm | Cut length |
 | `feed_rate_mm_s` | 9 | Feed Rate (mm/s) | Double | mm/s | Feed rate |
 | `blade_temp_c` | 10 | Blade Temp (°C) | Double | °C | Blade temperature |
-| `angle_accuracy_deg` | 11 | Angle Accuracy (deg) | Double | deg | Cut angle accuracy |
+| `angle_accuracy_deg` | 11 | Angle Accuracy (°) | Double | deg | Cut angle accuracy |
 | `cut_depth_mm` | 12 | Cut Depth (mm) | Double | mm | Cut depth |
 | `clamp_pressure_bar` | 13 | Clamp Pressure (bar) | Double | bar | Clamp pressure |
 | `material_hardness_hrc` | 14 | Material Hardness (HRC) | Double | HRC | Material hardness |
-| `chip_extraction_m3_h` | 15 | Chip Extraction (m3/h) | Double | m3/h | Chip extraction airflow |
+| `chip_extraction_m3_h` | 15 | Chip Extraction (m³/h) | Double | m3/h | Chip extraction airflow |
 | `blade_wear_pct` | 16 | Blade Wear (%) | Double | % | Blade wear percentage |
 | `power_consumption_kw` | 17 | Power Consumption (kW) | Double | kW | Power consumption |
 | `vibration_mm_s` | 18 | Vibration (mm/s) | Double | mm/s | Vibration level |
 | `coolant_flow_l_min` | 19 | Coolant Flow (L/min) | Double | L/min | Coolant flow rate |
-| `surface_roughness_um` | 20 | Surface Roughness (um) | Double | um | Surface roughness |
+| `surface_roughness_um` | 20 | Surface Roughness (µm) | Double | um | Surface roughness |
 | `noise_level_db` | 21 | Noise Level (dB) | Double | dB | Noise level |
 
 #### corner_welder
@@ -480,7 +480,7 @@ Source: `internal/machine/types/corner_welder.go`
 | `cooling_time_s` | 15 | Cooling Time (s) | Double | s | Cooling time |
 | `bead_height_mm` | 16 | Bead Height (mm) | Double | mm | Weld bead height |
 | `weld_flash_mm` | 17 | Weld Flash (mm) | Double | mm | Weld flash height |
-| `corner_angle_deg` | 18 | Corner Angle (deg) | Double | deg | Corner angle |
+| `corner_angle_deg` | 18 | Corner Angle (°) | Double | deg | Corner angle |
 | `servo_position_mm` | 19 | Servo Position (mm) | Double | mm | Servo position |
 | `power_consumption_kw` | 20 | Power Consumption (kW) | Double | kW | Power consumption |
 | `cycle_pressure_bar` | 21 | Cycle Pressure (bar) | Double | bar | Cycle pressure |
@@ -504,7 +504,7 @@ Source: `internal/machine/types/glass_setter.go`
 | `press_force_n` | 15 | Press Force (N) | Double | N | Glass press force |
 | `roller_speed_mm_s` | 16 | Roller Speed (mm/s) | Double | mm/s | Glazing roller speed |
 | `gasket_compression_pct` | 17 | Gasket Compression (%) | Double | % | Gasket compression |
-| `uv_cure_intensity_mw_cm2` | 18 | UV Cure Intensity (mW/cm2) | Double | mW/cm2 | UV cure intensity |
+| `uv_cure_intensity_mw_cm2` | 18 | UV Cure Intensity (mW/cm²) | Double | mW/cm2 | UV cure intensity |
 | `edge_clearance_mm` | 19 | Edge Clearance (mm) | Double | mm | Glass edge clearance |
 | `moisture_level_pct` | 20 | Moisture Level (%) | Double | % | Moisture level |
 | `alignment_offset_mm` | 21 | Alignment Offset (mm) | Double | mm | Alignment offset |
@@ -527,15 +527,15 @@ Source: `internal/machine/types/cnc_router.go`
 | `z_position_mm` | 10 | Z Position (mm) | Double | mm | Z axis position |
 | `cut_depth_mm` | 11 | Cut Depth (mm) | Double | mm | Cut depth |
 | `feed_rate_mm_min` | 12 | Feed Rate (mm/min) | Double | mm/min | Feed rate |
-| `dust_extraction_m3_h` | 13 | Dust Extraction (m3/h) | Double | m3/h | Dust extraction airflow |
+| `dust_extraction_m3_h` | 13 | Dust Extraction (m³/h) | Double | m3/h | Dust extraction airflow |
 | `tool_wear_pct` | 14 | Tool Wear (%) | Double | % | Tool wear percentage |
 | `power_consumption_kw` | 15 | Power Consumption (kW) | Double | kW | Power consumption |
 | `vibration_mm_s` | 16 | Vibration (mm/s) | Double | mm/s | Vibration level |
 | `vacuum_hold_down_kpa` | 17 | Vacuum Hold-Down (kPa) | Double | kPa | Vacuum hold-down pressure |
-| `surface_finish_um` | 18 | Surface Finish (um) | Double | um | Surface finish quality |
+| `surface_finish_um` | 18 | Surface Finish (µm) | Double | um | Surface finish quality |
 | `tool_temp_c` | 19 | Tool Temperature (°C) | Double | °C | Tool temperature |
 | `coolant_flow_l_min` | 20 | Coolant Flow (L/min) | Double | L/min | Coolant flow rate |
-| `material_removal_rate_cm3_min` | 21 | Material Removal Rate (cm3/min) | Double | cm3/min | Material removal rate |
+| `material_removal_rate_cm3_min` | 21 | Material Removal Rate (cm³/min) | Double | cm3/min | Material removal rate |
 
 #### edge_bander
 
@@ -575,7 +575,7 @@ Source: `internal/machine/types/assembly_press.go`
 | `cycle_pressure_bar` | 10 | Cycle Pressure (bar) | Double | bar | Cycle pressure |
 | `ram_position_mm` | 11 | Ram Position (mm) | Double | mm | Ram position |
 | `insertion_depth_mm` | 12 | Insertion Depth (mm) | Double | mm | Insertion depth |
-| `parallelism_um` | 13 | Platen Parallelism (um) | Double | um | Platen parallelism |
+| `parallelism_um` | 13 | Platen Parallelism (µm) | Double | um | Platen parallelism |
 | `stroke_speed_mm_s` | 14 | Stroke Speed (mm/s) | Double | mm/s | Stroke speed |
 | `part_presence_pct` | 15 | Part Presence (%) | Double | % | Part presence sensor |
 | `force_curve_peak_kn` | 16 | Peak Force (kN) | Double | kN | Peak force in cycle |
@@ -602,15 +602,15 @@ Source: `internal/machine/types/laser_cutter.go`
 | `assist_gas_pressure_bar` | 9 | Assist Gas Pressure (bar) | Double | bar | Assist gas pressure |
 | `focal_point_mm` | 10 | Focal Point (mm) | Double | mm | Focal point position |
 | `kerf_width_mm` | 11 | Kerf Width (mm) | Double | mm | Kerf width |
-| `beam_quality_mm_mrad` | 12 | Beam Quality (mm*mrad) | Double | mm*mrad | Beam quality (BPP) |
+| `beam_quality_mm_mrad` | 12 | Beam Quality (mm·mrad) | Double | mm*mrad | Beam quality (BPP) |
 | `nozzle_standoff_mm` | 13 | Nozzle Standoff (mm) | Double | mm | Nozzle standoff distance |
 | `pierce_time_ms` | 14 | Pierce Time (ms) | Double | ms | Pierce time |
 | `sheet_temp_c` | 15 | Sheet Temperature (°C) | Double | °C | Sheet temperature |
-| `exhaust_flow_m3_h` | 16 | Exhaust Flow (m3/h) | Double | m3/h | Exhaust flow rate |
+| `exhaust_flow_m3_h` | 16 | Exhaust Flow (m³/h) | Double | m3/h | Exhaust flow rate |
 | `lens_condition_pct` | 17 | Lens Condition (%) | Double | % | Lens condition |
 | `gas_consumption_l_min` | 18 | Gas Consumption (L/min) | Double | L/min | Gas consumption rate |
-| `edge_roughness_um` | 19 | Edge Roughness (um) | Double | um | Cut edge roughness |
-| `taper_angle_deg` | 20 | Taper Angle (deg) | Double | deg | Cut taper angle |
+| `edge_roughness_um` | 19 | Edge Roughness (µm) | Double | um | Cut edge roughness |
+| `taper_angle_deg` | 20 | Taper Angle (°) | Double | deg | Cut taper angle |
 | `power_stability_pct` | 21 | Power Stability (%) | Double | % | Laser power stability |
 
 #### press_brake
@@ -622,7 +622,7 @@ Source: `internal/machine/types/press_brake.go`
 | Name | NodeID | DisplayName | DataType | Unit | Description |
 |------|--------|-------------|----------|------|-------------|
 | `ram_force_tons` | 7 | Ram Force (tons) | Double | tons | Ram force |
-| `bend_angle_deg` | 8 | Bend Angle (deg) | Double | deg | Bend angle |
+| `bend_angle_deg` | 8 | Bend Angle (°) | Double | deg | Bend angle |
 | `back_gauge_position_mm` | 9 | Back Gauge Position (mm) | Double | mm | Back gauge position |
 | `stroke_length_mm` | 10 | Stroke Length (mm) | Double | mm | Stroke length |
 | `die_temp_c` | 11 | Die Temperature (°C) | Double | °C | Die temperature |
@@ -630,7 +630,7 @@ Source: `internal/machine/types/press_brake.go`
 | `daylight_mm` | 13 | Daylight Opening (mm) | Double | mm | Daylight opening |
 | `ram_speed_mm_s` | 14 | Ram Speed (mm/s) | Double | mm/s | Ram speed |
 | `tonnage_pct` | 15 | Tonnage Utilization (%) | Double | % | Tonnage utilization |
-| `material_springback_deg` | 16 | Springback (deg) | Double | deg | Material springback |
+| `material_springback_deg` | 16 | Springback (°) | Double | deg | Material springback |
 | `repeatability_mm` | 17 | Repeatability (mm) | Double | mm | Position repeatability |
 | `hydraulic_pressure_bar` | 18 | Hydraulic Pressure (bar) | Double | bar | Hydraulic pressure |
 | `beam_deflection_mm` | 19 | Beam Deflection (mm) | Double | mm | Beam deflection |
@@ -648,17 +648,17 @@ Source: `internal/machine/types/deburring_machine.go`
 | `brush_speed_rpm` | 7 | Brush Speed (RPM) | Double | RPM | Brush rotation speed |
 | `contact_pressure_bar` | 8 | Contact Pressure (bar) | Double | bar | Contact pressure |
 | `feed_rate_mm_s` | 9 | Feed Rate (mm/s) | Double | mm/s | Feed rate |
-| `surface_finish_ra_um` | 10 | Surface Finish (um Ra) | Double | um Ra | Surface finish |
+| `surface_finish_ra_um` | 10 | Surface Finish (µm Ra) | Double | um Ra | Surface finish |
 | `material_removal_mm` | 11 | Material Removal (mm) | Double | mm | Material removal depth |
 | `brush_wear_pct` | 12 | Brush Wear (%) | Double | % | Brush wear percentage |
 | `power_consumption_kw` | 13 | Power Consumption (kW) | Double | kW | Power consumption |
 | `vibration_mm_s` | 14 | Vibration (mm/s) | Double | mm/s | Vibration level |
 | `coolant_flow_l_min` | 15 | Coolant Flow (L/min) | Double | L/min | Coolant flow rate |
-| `dust_extraction_m3_h` | 16 | Dust Extraction (m3/h) | Double | m3/h | Dust extraction airflow |
+| `dust_extraction_m3_h` | 16 | Dust Extraction (m³/h) | Double | m3/h | Dust extraction airflow |
 | `part_temp_c` | 17 | Part Temperature (°C) | Double | °C | Part temperature |
 | `spindle_current_a` | 18 | Spindle Current (A) | Double | A | Spindle motor current |
-| `burr_height_before_um` | 19 | Burr Height Before (um) | Double | um | Burr height before processing |
-| `burr_height_after_um` | 20 | Burr Height After (um) | Double | um | Burr height after processing |
+| `burr_height_before_um` | 19 | Burr Height Before (µm) | Double | um | Burr height before processing |
+| `burr_height_after_um` | 20 | Burr Height After (µm) | Double | um | Burr height after processing |
 | `cycle_count_brush` | 21 | Brush Cycle Count | Double | | Brush cycle count |
 
 ---
@@ -733,7 +733,7 @@ Source: `internal/machine/types/trimming_press.go`
 | `slug_ejection_pct` | 15 | Slug Ejection (%) | Double | % | Slug ejection rate |
 | `lubrication_level_pct` | 16 | Lubrication Level (%) | Double | % | Lubrication level |
 | `die_wear_pct` | 17 | Die Wear (%) | Double | % | Die wear percentage |
-| `punch_alignment_um` | 18 | Punch Alignment (um) | Double | um | Punch alignment |
+| `punch_alignment_um` | 18 | Punch Alignment (µm) | Double | um | Punch alignment |
 | `press_energy_j` | 19 | Press Energy (J) | Double | J | Press energy per stroke |
 | `vibration_mm_s` | 20 | Vibration (mm/s) | Double | mm/s | Vibration level |
 | `noise_level_db` | 21 | Noise Level (dB) | Double | dB | Noise level |

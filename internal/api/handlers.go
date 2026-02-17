@@ -525,14 +525,25 @@ type bufferResponse struct {
 }
 
 type machineResponse struct {
-	ID             string            `json:"id"`
-	Type           string            `json:"type"`
-	Role           string            `json:"role"`
-	LineInstanceID string            `json:"line_instance_id"`
-	State          string            `json:"state"`
-	OrderID        string            `json:"order_id,omitempty"`
-	OperationID    string            `json:"operation_id,omitempty"`
+	ID             string                 `json:"id"`
+	Type           string                 `json:"type"`
+	Role           string                 `json:"role"`
+	LineInstanceID string                 `json:"line_instance_id"`
+	State          string                 `json:"state"`
+	OrderID        string                 `json:"order_id,omitempty"`
+	OperationID    string                 `json:"operation_id,omitempty"`
+	OPCUAPort      int                    `json:"opcua_port,omitempty"`
 	Tags           map[string]interface{} `json:"tags"`
+}
+
+// OPCUAPortLookup is a function that returns the OPC-UA port for a machine ID.
+type OPCUAPortLookup func(machineID string) int
+
+var opcuaPortLookup OPCUAPortLookup
+
+// SetOPCUAPortLookup sets the function used to resolve OPC-UA ports.
+func SetOPCUAPortLookup(fn OPCUAPortLookup) {
+	opcuaPortLookup = fn
 }
 
 func toLineResponse(l *line.Line) lineResponse {
@@ -562,7 +573,7 @@ func toBufferResponse(b *line.Buffer) bufferResponse {
 
 func toMachineResponse(m machine.Machine) machineResponse {
 	orderID, opID := m.GetCurrentOrder()
-	return machineResponse{
+	resp := machineResponse{
 		ID:             m.ID(),
 		Type:           m.Type(),
 		Role:           m.Role(),
@@ -572,6 +583,10 @@ func toMachineResponse(m machine.Machine) machineResponse {
 		OperationID:    opID,
 		Tags:           m.GetTags(),
 	}
+	if opcuaPortLookup != nil {
+		resp.OPCUAPort = opcuaPortLookup(m.ID())
+	}
+	return resp
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

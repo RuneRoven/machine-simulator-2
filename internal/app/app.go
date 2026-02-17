@@ -167,6 +167,7 @@ func New(cfg *config.Config) (*App, error) {
 			if adapter.Name() == "opcua" {
 				if oa, ok := adapter.(*opcuaAdapter.Adapter); ok {
 					webUI.SetOPCUAPortLookup(oa.GetPort)
+					api.SetOPCUAPortLookup(oa.GetPort)
 				}
 			}
 		}

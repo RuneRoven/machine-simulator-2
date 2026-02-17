@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -168,6 +169,14 @@ func applyEnvOverrides(global *GlobalConfig, adapters *AdaptersConfig) {
 	}
 	if v := os.Getenv("SIMULATOR_OPCUA_ENABLED"); v != "" {
 		adapters.OPCUA.Enabled = v == "true" || v == "1"
+	}
+	if v := os.Getenv("SIMULATOR_OPCUA_HOSTNAME"); v != "" {
+		adapters.OPCUA.Hostname = v
+	}
+	if v := os.Getenv("SIMULATOR_OPCUA_BASE_PORT"); v != "" {
+		if i, ok := parseInt(v); ok {
+			adapters.OPCUA.BasePort = i
+		}
 	}
 	if v := os.Getenv("SIMULATOR_MODBUS_ENABLED"); v != "" {
 		adapters.Modbus.Enabled = v == "true" || v == "1"
@@ -339,6 +348,11 @@ func LoadFromLineEnvVars(configDir string) (*Config, error) {
 	if len(lines) == 0 {
 		return nil, nil
 	}
+
+	// Sort lines alphabetically by template name for deterministic port assignment
+	sort.Slice(lines, func(i, j int) bool {
+		return lines[i].Template < lines[j].Template
+	})
 
 	cfg.Profile = ProfileConfig{
 		Name:  "env-vars",

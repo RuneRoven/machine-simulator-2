@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gopcua/opcua/id"
 	"github.com/gopcua/opcua/server"
 	"github.com/gopcua/opcua/ua"
 	"github.com/rs/zerolog/log"
@@ -113,35 +114,42 @@ func (a *Adapter) RegisterMachine(m machine.Machine, cfg protocol.AdapterMachine
 	)
 
 	ns := server.NewNodeNameSpace(srv, fmt.Sprintf("urn:machine-simulator:%s", m.ID()))
-	srv.AddNamespace(ns)
+
+	objectsFolderID := ua.NewNumericNodeID(ns.ID(), id.ObjectsFolder)
 
 	// Create nodes for each tag definition with explicit numeric node IDs
 	nodes := make(map[string]*server.Node)
 	for _, td := range m.GetTagDefinitions() {
-		var initVal interface{}
-		switch td.DataType {
-		case "Int32":
-			initVal = int32(0)
-		case "Int64":
-			initVal = int64(0)
-		case "Float":
-			initVal = float32(0)
-		case "Double":
-			initVal = float64(0)
-		case "Boolean":
-			initVal = false
-		case "String":
-			initVal = ""
-		default:
-			initVal = float64(0)
+		nodeID := ua.NewNumericNodeID(ns.ID(), uint32(td.NodeID))
+
+		attrs := server.Attributes{
+			ua.AttributeIDBrowseName:              server.DataValueFromValue(&ua.QualifiedName{NamespaceIndex: ns.ID(), Name: td.Name}),
+			ua.AttributeIDDisplayName:              server.DataValueFromValue(ua.NewLocalizedText(td.DisplayName)),
+			ua.AttributeIDDescription:              server.DataValueFromValue(ua.NewLocalizedText(td.Name)),
+			ua.AttributeIDNodeClass:                server.DataValueFromValue(int32(ua.NodeClassVariable)),
+			ua.AttributeIDDataType:                 server.DataValueFromValue(dataTypeNodeID(td.DataType)),
+			ua.AttributeIDValueRank:                server.DataValueFromValue(int32(-1)), // Scalar
+			ua.AttributeIDAccessLevel:              server.DataValueFromValue(byte(ua.AccessLevelTypeCurrentRead | ua.AccessLevelTypeCurrentWrite)),
+			ua.AttributeIDUserAccessLevel:          server.DataValueFromValue(byte(ua.AccessLevelTypeCurrentRead | ua.AccessLevelTypeCurrentWrite)),
+			ua.AttributeIDMinimumSamplingInterval:  server.DataValueFromValue(float64(0)),
+			ua.AttributeIDHistorizing:              server.DataValueFromValue(false),
 		}
 
-		nodeID := ua.NewNumericNodeID(ns.ID(), uint32(td.NodeID))
-		node := server.NewVariableNode(nodeID, td.Name, initVal)
-		ns.AddNode(node)
+		refs := server.References{
+			{
+				ReferenceTypeID: ua.NewNumericNodeID(0, id.HasComponent),
+				IsForward:       false,
+				NodeID:          &ua.ExpandedNodeID{NodeID: objectsFolderID},
+			},
+			{
+				ReferenceTypeID: ua.NewNumericNodeID(0, id.HasTypeDefinition),
+				IsForward:       true,
+				NodeID:          &ua.ExpandedNodeID{NodeID: ua.NewNumericNodeID(0, id.BaseDataVariableType)},
+			},
+		}
 
-		// Set display name
-		node.SetDisplayName(td.DisplayName, "")
+		node := server.NewNode(nodeID, attrs, refs, nil)
+		ns.AddNode(node)
 
 		nodes[td.Name] = node
 	}
@@ -201,11 +209,18 @@ func (a *Adapter) updateAllTags() {
 	}
 	a.mu.RUnlock()
 
+	now := time.Now()
 	for _, ms := range servers {
 		tags := ms.machine.GetTags()
 		for name, node := range ms.nodes {
 			if val, ok := tags[name]; ok {
-				dv := server.DataValueFromValue(val)
+				dv := &ua.DataValue{
+					EncodingMask:    ua.DataValueValue | ua.DataValueStatusCode | ua.DataValueSourceTimestamp | ua.DataValueServerTimestamp,
+					Value:           ua.MustVariant(toOPCUAType(val)),
+					Status:          ua.StatusOK,
+					SourceTimestamp: now,
+					ServerTimestamp: now,
+				}
 				node.SetAttribute(ua.AttributeIDValue, dv)
 			}
 		}
@@ -220,4 +235,41 @@ func (a *Adapter) GetPort(machineID string) int {
 		return ms.port
 	}
 	return 0
+}
+
+// toOPCUAType converts Go values to types supported by ua.MustVariant.
+// ua.MustVariant doesn't support plain int/uint - only sized types.
+func toOPCUAType(val interface{}) interface{} {
+	switch v := val.(type) {
+	case int:
+		return int64(v)
+	case uint:
+		return uint64(v)
+	case float32:
+		return float64(v)
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return val
+	}
+}
+
+// dataTypeNodeID maps data type strings to OPC-UA type NodeIDs.
+func dataTypeNodeID(dataType string) *ua.NodeID {
+	switch dataType {
+	case "String", "DateTime":
+		return ua.NewNumericNodeID(0, id.String)
+	case "Double":
+		return ua.NewNumericNodeID(0, id.Double)
+	case "Float":
+		return ua.NewNumericNodeID(0, id.Float)
+	case "Int32":
+		return ua.NewNumericNodeID(0, id.Int32)
+	case "Int64":
+		return ua.NewNumericNodeID(0, id.Int64)
+	case "Boolean":
+		return ua.NewNumericNodeID(0, id.Boolean)
+	default:
+		return ua.NewNumericNodeID(0, id.String)
+	}
 }

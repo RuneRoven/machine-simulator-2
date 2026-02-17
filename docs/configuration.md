@@ -461,7 +461,7 @@ Set any of the following `SIMULATOR_*` variables to override the corresponding s
 | `SIMULATOR_MODBUS_MAX_CLIENTS` | `modbus.max_clients` | int |
 | `SIMULATOR_MODBUS_UPDATE_INTERVAL_MS` | `modbus.update_interval_ms` | int |
 
-**Note:** The `env` struct tags in `internal/config/types.go` document the intended mapping for all environment variables. However, only the variables listed in the `applyEnvOverrides` function in `internal/config/loader.go` are actually read at runtime. The following variables are declared in struct tags but **not currently implemented** in the loader: `SIMULATOR_TICK_RATE_MS`, `SIMULATOR_LOG_LEVEL`, `SIMULATOR_ERP_MAX_BACKLOG`, `SIMULATOR_MES_DISPATCH_INTERVAL_MS`, `SIMULATOR_OPCUA_BASE_PORT`, `SIMULATOR_OPCUA_UPDATE_RATE_MS`, `SIMULATOR_OPCUA_MAX_SESSIONS`, `SIMULATOR_OPCUA_HOSTNAME`, `SIMULATOR_MODBUS_PORT`, `SIMULATOR_MODBUS_MAX_CLIENTS`, `SIMULATOR_MODBUS_UPDATE_INTERVAL_MS`.
+**Note:** The `env` struct tags in `internal/config/types.go` document the intended mapping for all environment variables. However, only the variables listed in the `applyEnvOverrides` function in `internal/config/loader.go` are actually read at runtime. The following variables are declared in struct tags but **not currently implemented** in the loader: `SIMULATOR_TICK_RATE_MS`, `SIMULATOR_LOG_LEVEL`, `SIMULATOR_ERP_MAX_BACKLOG`, `SIMULATOR_MES_DISPATCH_INTERVAL_MS`, `SIMULATOR_OPCUA_UPDATE_RATE_MS`, `SIMULATOR_OPCUA_MAX_SESSIONS`, `SIMULATOR_MODBUS_PORT`, `SIMULATOR_MODBUS_MAX_CLIENTS`, `SIMULATOR_MODBUS_UPDATE_INTERVAL_MS`.
 
 ---
 
