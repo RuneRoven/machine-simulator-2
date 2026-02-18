@@ -50,7 +50,7 @@ The project SHALL include a `docs/tag-catalog.md` listing every machine type wit
 
 #### Scenario: OPC-UA addressing guide
 - **WHEN** a user reads the tag catalog
-- **THEN** they find instructions on how to address tags via OPC-UA using numeric node IDs (e.g., `ns=2;i=7` for the first type-specific tag) and the namespace URI pattern
+- **THEN** they find instructions on how to address tags via OPC-UA using numeric node IDs (e.g., `ns=1;i=7` for the first type-specific tag) and the namespace URI pattern
 
 ### Requirement: Root README update
 The project root `README.md` SHALL link to the `docs/` directory for detailed documentation.

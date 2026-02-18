@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"machine-simulator-2/internal/config"
+	"machine-simulator-2/internal/event"
 )
 
 // State represents a machine's operational state.
@@ -164,6 +165,9 @@ type BaseMachine struct {
 
 	// Callbacks
 	onPartComplete func(machineID string, good bool)
+
+	// Event bus for publishing state changes
+	eventBus *event.Bus
 
 	// Command channel
 	commandChan chan Command
@@ -341,6 +345,13 @@ func (m *BaseMachine) IsStarvedByBuffer() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.starvedByBuffer
+}
+
+// SetEventBus sets the event bus for publishing state change events.
+func (m *BaseMachine) SetEventBus(bus *event.Bus) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.eventBus = bus
 }
 
 // SetTimeScale sets the time acceleration factor.
@@ -529,6 +540,8 @@ func (m *BaseMachine) canTransition(target State) bool {
 
 func (m *BaseMachine) setState(newState State) {
 	now := time.Now()
+	oldState := m.state
+
 	// Track running time
 	if m.state == StateRunning {
 		if !m.runStart.IsZero() {
@@ -546,6 +559,24 @@ func (m *BaseMachine) setState(newState State) {
 		m.runStart = now
 	} else if newState == StateFault || newState == StateStopped || newState == StateMaintenance {
 		m.downStart = now
+	}
+
+	// Publish state change event
+	if m.eventBus != nil && oldState != newState {
+		bus := m.eventBus
+		id := m.id
+		lineID := m.lineInstanceID
+		m.mu.Unlock()
+		bus.Publish(event.Event{
+			Type:      event.MachineStateChange,
+			MachineID: id,
+			LineID:    lineID,
+			Data: map[string]interface{}{
+				"previous_state": string(oldState),
+				"new_state":      string(newState),
+			},
+		})
+		m.mu.Lock()
 	}
 }
 

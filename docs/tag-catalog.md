@@ -18,19 +18,19 @@ Tag definitions are authoritative; they are derived directly from the `GetTagDef
 Each tag is assigned a numeric **NodeID** that is unique within a single machine. To address a tag via OPC-UA, use the namespace-qualified identifier:
 
 ```
-ns=2;i=<NodeID>
+ns=1;i=<NodeID>
 ```
 
 For example, to read the `state` tag (NodeID 1) of a machine:
 
 ```
-ns=2;i=1
+ns=1;i=1
 ```
 
 To read the `press_force_kn` tag (NodeID 7) of a metal forming machine:
 
 ```
-ns=2;i=7
+ns=1;i=7
 ```
 
 Each machine instance runs its own OPC-UA server (or is a node within a shared server), so the same NodeID space applies independently per machine. NodeIDs 1--6 are always the base tags; NodeIDs 7+ are type-specific.

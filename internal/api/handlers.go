@@ -92,6 +92,11 @@ func (s *Server) Router() http.Handler {
 		r.Put("/orders/{id}/status", s.handleUpdateOrderStatus)
 		r.Delete("/orders/{id}", s.handleCancelOrder)
 
+		// Operations
+		r.Get("/operations", s.handleGetOperations)
+		r.Get("/operations/{id}", s.handleGetOperation)
+		r.Get("/orders/{id}/operations", s.handleGetOrderOperations)
+
 		// Recipes
 		r.Get("/recipes", s.handleGetRecipes)
 		r.Get("/lines/{id}/recipes", s.handleGetLineRecipes)
@@ -342,6 +347,48 @@ func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
+// Operations
+func (s *Server) handleGetOperations(w http.ResponseWriter, r *http.Request) {
+	filter := storage.OperationFilter{
+		OrderID:        r.URL.Query().Get("order_id"),
+		MachineID:      r.URL.Query().Get("machine_id"),
+		Status:         r.URL.Query().Get("status"),
+		LineInstanceID: r.URL.Query().Get("line_instance_id"),
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		filter.Limit, _ = strconv.Atoi(l)
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		filter.Offset, _ = strconv.Atoi(o)
+	}
+	ops, err := s.ops.List(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ops)
+}
+
+func (s *Server) handleGetOperation(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	op, err := s.ops.GetByID(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, op)
+}
+
+func (s *Server) handleGetOrderOperations(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ops, err := s.ops.ListByOrderID(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ops)
+}
+
 // Recipes
 func (s *Server) handleGetRecipes(w http.ResponseWriter, r *http.Request) {
 	products := s.catalog.GetAllProducts()
@@ -532,6 +579,11 @@ type machineResponse struct {
 	State          string                 `json:"state"`
 	OrderID        string                 `json:"order_id,omitempty"`
 	OperationID    string                 `json:"operation_id,omitempty"`
+	CycleCount     int64                  `json:"cycle_count"`
+	GoodCount      int64                  `json:"good_count"`
+	ScrapCount     int64                  `json:"scrap_count"`
+	RunTimeSec     float64                `json:"run_time_sec"`
+	DownTimeSec    float64                `json:"down_time_sec"`
 	OPCUAPort      int                    `json:"opcua_port,omitempty"`
 	Tags           map[string]interface{} `json:"tags"`
 }
@@ -573,6 +625,7 @@ func toBufferResponse(b *line.Buffer) bufferResponse {
 
 func toMachineResponse(m machine.Machine) machineResponse {
 	orderID, opID := m.GetCurrentOrder()
+	bd := m.GetBaseData()
 	resp := machineResponse{
 		ID:             m.ID(),
 		Type:           m.Type(),
@@ -581,6 +634,11 @@ func toMachineResponse(m machine.Machine) machineResponse {
 		State:          string(m.GetState()),
 		OrderID:        orderID,
 		OperationID:    opID,
+		CycleCount:     bd.CycleCount,
+		GoodCount:      bd.GoodCount,
+		ScrapCount:     bd.ScrapCount,
+		RunTimeSec:     bd.RunTimeSec,
+		DownTimeSec:    bd.DownTimeSec,
 		Tags:           m.GetTags(),
 	}
 	if opcuaPortLookup != nil {

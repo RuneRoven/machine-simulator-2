@@ -16,9 +16,20 @@ type GlobalConfig struct {
 	TickRateMS   int     `yaml:"tick_rate_ms"  env:"SIMULATOR_TICK_RATE_MS"`
 	LogLevel     string  `yaml:"log_level"     env:"SIMULATOR_LOG_LEVEL"`
 
-	API APIConfig `yaml:"api"`
-	ERP ERPConfig `yaml:"erp"`
-	MES MESConfig `yaml:"mes"`
+	API     APIConfig     `yaml:"api"`
+	ERP     ERPConfig     `yaml:"erp"`
+	MES     MESConfig     `yaml:"mes"`
+	Webhook WebhookConfig `yaml:"webhook"`
+}
+
+// WebhookConfig holds webhook publisher settings.
+type WebhookConfig struct {
+	Enabled       bool     `yaml:"enabled"        env:"SIMULATOR_WEBHOOK_ENABLED"`
+	TargetURL     string   `yaml:"target_url"     env:"SIMULATOR_WEBHOOK_TARGET_URL"`
+	EventTypes    []string `yaml:"event_types"    env:"SIMULATOR_WEBHOOK_EVENT_TYPES"`
+	TimeoutMS     int      `yaml:"timeout_ms"     env:"SIMULATOR_WEBHOOK_TIMEOUT_MS"`
+	RetryAttempts int      `yaml:"retry_attempts"`
+	RetryDelayMS  int      `yaml:"retry_delay_ms"`
 }
 
 // APIConfig holds HTTP server settings.

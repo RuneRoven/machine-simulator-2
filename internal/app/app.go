@@ -23,6 +23,7 @@ import (
 	"machine-simulator-2/internal/simulation"
 	"machine-simulator-2/internal/storage"
 	"machine-simulator-2/internal/web"
+	"machine-simulator-2/internal/webhook"
 )
 
 // App is the composition root for the simulator.
@@ -37,9 +38,10 @@ type App struct {
 	ops     *storage.OperationRepository
 	erp     *erp.ERP
 	mes     *mes.MES
-	adapters []protocol.Adapter
-	httpSrv  *http.Server
-	wsHub    *api.Hub
+	adapters  []protocol.Adapter
+	webhookPub *webhook.Publisher
+	httpSrv   *http.Server
+	wsHub     *api.Hub
 }
 
 // New creates and wires all components.
@@ -140,6 +142,19 @@ func New(cfg *config.Config) (*App, error) {
 		}
 	}
 
+	// Webhook publisher
+	if cfg.Global.Webhook.Enabled {
+		whCfg := webhook.Config{
+			Enabled:       cfg.Global.Webhook.Enabled,
+			TargetURL:     cfg.Global.Webhook.TargetURL,
+			EventTypes:    cfg.Global.Webhook.EventTypes,
+			TimeoutMS:     cfg.Global.Webhook.TimeoutMS,
+			RetryAttempts: cfg.Global.Webhook.RetryAttempts,
+			RetryDelayMS:  cfg.Global.Webhook.RetryDelayMS,
+		}
+		app.webhookPub = webhook.New(whCfg, app.bus)
+	}
+
 	// WebSocket hub
 	app.wsHub = api.NewHub(app.bus)
 
@@ -213,6 +228,11 @@ func (a *App) Run(ctx context.Context) error {
 
 	// Start MES
 	a.mes.Start(ctx)
+
+	// Start webhook publisher
+	if a.webhookPub != nil {
+		a.webhookPub.Start(ctx)
+	}
 
 	// Start HTTP server
 	go func() {

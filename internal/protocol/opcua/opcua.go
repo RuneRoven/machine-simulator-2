@@ -221,7 +221,7 @@ func (a *Adapter) updateAllTags() {
 					SourceTimestamp: now,
 					ServerTimestamp: now,
 				}
-				node.SetAttribute(ua.AttributeIDValue, dv)
+				ms.ns.SetAttribute(node.ID(), ua.AttributeIDValue, dv)
 			}
 		}
 	}

@@ -181,6 +181,27 @@ func applyEnvOverrides(global *GlobalConfig, adapters *AdaptersConfig) {
 	if v := os.Getenv("SIMULATOR_MODBUS_ENABLED"); v != "" {
 		adapters.Modbus.Enabled = v == "true" || v == "1"
 	}
+
+	// Webhook overrides
+	if v := os.Getenv("SIMULATOR_WEBHOOK_ENABLED"); v != "" {
+		global.Webhook.Enabled = v == "true" || v == "1"
+	}
+	if v := os.Getenv("SIMULATOR_WEBHOOK_TARGET_URL"); v != "" {
+		global.Webhook.TargetURL = v
+	}
+	if v := os.Getenv("SIMULATOR_WEBHOOK_EVENT_TYPES"); v != "" {
+		types := strings.Split(v, ",")
+		cleaned := make([]string, 0, len(types))
+		for _, t := range types {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				cleaned = append(cleaned, t)
+			}
+		}
+		if len(cleaned) > 0 {
+			global.Webhook.EventTypes = cleaned
+		}
+	}
 }
 
 func instantiateLines(cfg *Config) error {

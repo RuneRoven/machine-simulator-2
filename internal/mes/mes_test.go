@@ -66,8 +66,8 @@ func setupMESTest(t *testing.T) (*MES, *storage.OrderRepository, *storage.Operat
 		InstanceID:   "line-1",
 		TemplateName: "test-line",
 		Machines: []config.MachineInstanceConfig{
-			{ID: "line-1-stage-1", Stage: 1},
-			{ID: "line-1-stage-2", Stage: 2},
+			{ID: "line-1-stage-1", Stage: 1, CycleTimeMS: 500},
+			{ID: "line-1-stage-2", Stage: 2, CycleTimeMS: 500},
 		},
 		Buffers: []config.BufferInstanceConfig{
 			{ID: "line-1-buffer-1-2", UpstreamMachineID: "line-1-stage-1", DownstreamMachineID: "line-1-stage-2", Capacity: 10},

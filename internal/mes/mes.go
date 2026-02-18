@@ -2,7 +2,6 @@ package mes
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -27,10 +26,11 @@ type Config struct {
 
 // LineRef holds references needed to dispatch to a line.
 type LineRef struct {
-	InstanceID   string
-	TemplateName string
-	MachineIDs   []string
-	Stages       []int
+	InstanceID         string
+	TemplateName       string
+	MachineIDs         []string
+	Stages             []int
+	DefaultCycleTimeMS []int
 }
 
 // MES simulates manufacturing execution - dispatch and progress tracking.
@@ -91,6 +91,7 @@ func (m *MES) RegisterLine(li config.LineInstanceConfig) {
 	for _, mc := range li.Machines {
 		ref.MachineIDs = append(ref.MachineIDs, mc.ID)
 		ref.Stages = append(ref.Stages, mc.Stage)
+		ref.DefaultCycleTimeMS = append(ref.DefaultCycleTimeMS, mc.CycleTimeMS)
 		m.machineToLine[mc.ID] = li.InstanceID
 	}
 	m.lines[li.InstanceID] = ref
@@ -178,19 +179,29 @@ func (m *MES) dispatchOrder(order *storage.Order) {
 		return
 	}
 
+	// Look up recipe for cycle time overrides
+	r, recipeErr := m.catalog.GetRecipe(lineRef.TemplateName, order.ProductID)
+
 	// Create operations for each stage
 	for i, machineID := range lineRef.MachineIDs {
 		stage := lineRef.Stages[i]
 		opID := uuid.New().String()
-		opName := fmt.Sprintf("OP%d", (i+1)*10)
-		_ = opName
+
+		// Determine planned cycle time: recipe override takes priority, then machine default
+		plannedCycleTimeMS := lineRef.DefaultCycleTimeMS[i]
+		if recipeErr == nil {
+			if ov, ok := r.StageOverrides[stage]; ok && ov.CycleTimeMS != nil {
+				plannedCycleTimeMS = *ov.CycleTimeMS
+			}
+		}
 
 		op := &storage.Operation{
-			ID:        opID,
-			OrderID:   order.ID,
-			MachineID: machineID,
-			Stage:     stage,
-			Status:    "PENDING",
+			ID:                 opID,
+			OrderID:            order.ID,
+			MachineID:          machineID,
+			Stage:              stage,
+			Status:             "PENDING",
+			PlannedCycleTimeMS: plannedCycleTimeMS,
 		}
 
 		if err := m.operations.Create(op); err != nil {
@@ -203,8 +214,7 @@ func (m *MES) dispatchOrder(order *storage.Order) {
 	m.orders.UpdateStatus(order.ID, "IN_PROGRESS")
 
 	// Apply recipe overrides
-	r, err := m.catalog.GetRecipe(lineRef.TemplateName, order.ProductID)
-	if err == nil {
+	if recipeErr == nil {
 		for i, machineID := range lineRef.MachineIDs {
 			stage := lineRef.Stages[i]
 			if ov, ok := r.StageOverrides[stage]; ok {
@@ -311,10 +321,11 @@ func (m *MES) handleCycleComplete(machineID string, good bool) {
 			MachineID: machineID,
 			LineID:    lineID,
 			Data: map[string]interface{}{
-				"order_id":    orderID,
-				"good_qty":    order.GoodQty + boolToInt(good),
-				"scrap_qty":   order.ScrapQty + boolToInt(!good),
-				"planned_qty": order.PlannedQty,
+				"order_id":             orderID,
+				"good_qty":             order.GoodQty + boolToInt(good),
+				"scrap_qty":            order.ScrapQty + boolToInt(!good),
+				"planned_qty":          order.PlannedQty,
+				"planned_cycle_time_ms": op.PlannedCycleTimeMS,
 			},
 		})
 	}

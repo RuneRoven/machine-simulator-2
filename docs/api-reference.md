@@ -203,6 +203,11 @@ List all machines across all lines.
     "state": "RUNNING",
     "order_id": "ORD-00042",
     "operation_id": "OP-00042-1",
+    "cycle_count": 89,
+    "good_count": 87,
+    "scrap_count": 2,
+    "run_time_sec": 445.0,
+    "down_time_sec": 12.5,
     "tags": {
       "state": "RUNNING",
       "cycle_time_ms": 5000,
@@ -244,6 +249,11 @@ Get details for a single machine.
   "state": "RUNNING",
   "order_id": "ORD-00042",
   "operation_id": "OP-00042-1",
+  "cycle_count": 89,
+  "good_count": 87,
+  "scrap_count": 2,
+  "run_time_sec": 445.0,
+  "down_time_sec": 12.5,
   "tags": {
     "state": "RUNNING",
     "cycle_time_ms": 5000,
@@ -571,6 +581,133 @@ Cancel an order. This is a convenience endpoint equivalent to setting status to 
 
 ```bash
 curl -X DELETE http://localhost:8081/api/orders/ORD-00042
+```
+
+---
+
+### Operations
+
+#### GET /api/operations
+
+List operations with optional filtering. Operations represent individual machine-stage work assignments within an order.
+
+**Query Parameters**
+
+| Parameter         | Type   | Description                          |
+|-------------------|--------|--------------------------------------|
+| `order_id`        | string | Filter by order ID                   |
+| `machine_id`      | string | Filter by machine ID                 |
+| `status`          | string | Filter by status (e.g. `IN_PROGRESS`)|
+| `line_instance_id`| string | Filter by line instance ID           |
+| `limit`           | int    | Maximum number of results            |
+| `offset`          | int    | Number of results to skip            |
+
+**Response** `200 OK`
+
+```json
+[
+  {
+    "id": "OP-00042-1",
+    "order_id": "ORD-00042",
+    "machine_id": "automotive-welding-1-stage-1",
+    "stage": 1,
+    "status": "IN_PROGRESS",
+    "planned_cycle_time_ms": 4500,
+    "good_qty": 48,
+    "scrap_qty": 2,
+    "started_at": "2026-02-13T10:05:00Z"
+  }
+]
+```
+
+**Example**
+
+```bash
+curl "http://localhost:8081/api/operations?machine_id=automotive-welding-1-stage-1&status=IN_PROGRESS"
+```
+
+---
+
+#### GET /api/operations/{id}
+
+Get details for a single operation.
+
+**Path Parameters**
+
+| Parameter | Type   | Description    |
+|-----------|--------|----------------|
+| `id`      | string | Operation ID   |
+
+**Response** `200 OK`
+
+```json
+{
+  "id": "OP-00042-1",
+  "order_id": "ORD-00042",
+  "machine_id": "automotive-welding-1-stage-1",
+  "stage": 1,
+  "status": "IN_PROGRESS",
+  "planned_cycle_time_ms": 4500,
+  "good_qty": 48,
+  "scrap_qty": 2,
+  "started_at": "2026-02-13T10:05:00Z"
+}
+```
+
+**Error** `404 Not Found` -- operation not found
+
+**Example**
+
+```bash
+curl http://localhost:8081/api/operations/OP-00042-1
+```
+
+---
+
+#### GET /api/orders/{id}/operations
+
+Get all operations for a specific order, ordered by stage.
+
+**Path Parameters**
+
+| Parameter | Type   | Description   |
+|-----------|--------|---------------|
+| `id`      | string | Order ID      |
+
+**Response** `200 OK`
+
+```json
+[
+  {
+    "id": "OP-00042-1",
+    "order_id": "ORD-00042",
+    "machine_id": "automotive-welding-1-stage-1",
+    "stage": 1,
+    "status": "COMPLETED",
+    "planned_cycle_time_ms": 4500,
+    "good_qty": 100,
+    "scrap_qty": 3,
+    "started_at": "2026-02-13T10:05:00Z",
+    "completed_at": "2026-02-13T10:45:00Z"
+  },
+  {
+    "id": "OP-00042-2",
+    "order_id": "ORD-00042",
+    "machine_id": "automotive-welding-1-stage-2",
+    "stage": 2,
+    "status": "IN_PROGRESS",
+    "planned_cycle_time_ms": 8000,
+    "good_qty": 85,
+    "scrap_qty": 1,
+    "started_at": "2026-02-13T10:06:00Z"
+  }
+]
+```
+
+**Example**
+
+```bash
+curl http://localhost:8081/api/orders/ORD-00042/operations
 ```
 
 ---
@@ -1157,6 +1294,77 @@ Emitted when the simulator detects and recovers from a deadlock (all machines in
   "timestamp": 1707820830000
 }
 ```
+
+---
+
+## Webhooks
+
+The simulator can push events to an external URL via HTTP POST. This complements the WebSocket interface by enabling server-to-server integrations (e.g., Power BI, data pipelines) without maintaining a persistent connection.
+
+### Payload Format
+
+Each event is POSTed as a JSON body:
+
+```json
+{
+  "event_type": "machine.cycle_complete",
+  "timestamp": 1707820805000,
+  "machine_id": "profile-cutter-1",
+  "line_id": "line-aluminum-windows-1",
+  "data": {
+    "cycle_time_ms": 5000,
+    "is_scrap": false,
+    "good_count": 88,
+    "scrap_count": 2
+  }
+}
+```
+
+| Field        | Type   | Description                                        |
+|--------------|--------|----------------------------------------------------|
+| `event_type` | string | Event type identifier                              |
+| `timestamp`  | int    | Unix timestamp in milliseconds                     |
+| `machine_id` | string | Machine that produced the event (may be empty)    |
+| `line_id`    | string | Line associated with the event (may be empty)     |
+| `data`       | object | Event-specific payload (same as WebSocket)         |
+
+### Configuration
+
+Webhooks are configured in `config/global.yaml` or via environment variables:
+
+```yaml
+webhook:
+  enabled: true
+  target_url: "https://example.com/webhook"
+  event_types: ["machine.cycle_complete", "order.progress", "order.closed", "machine.state_change"]
+  timeout_ms: 5000
+  retry_attempts: 3
+  retry_delay_ms: 1000
+```
+
+| Field            | Type     | Default | Description                                      |
+|------------------|----------|---------|--------------------------------------------------|
+| `enabled`        | bool     | `false` | Whether webhook publishing is active             |
+| `target_url`     | string   | `""`    | URL to POST events to                            |
+| `event_types`    | []string | (see above) | Event types to forward                       |
+| `timeout_ms`     | int      | `5000`  | HTTP request timeout in milliseconds             |
+| `retry_attempts` | int      | `3`     | Number of delivery attempts per event            |
+| `retry_delay_ms` | int      | `1000`  | Base delay between retries (exponential backoff) |
+
+Environment variables: `SIMULATOR_WEBHOOK_ENABLED`, `SIMULATOR_WEBHOOK_TARGET_URL`
+
+### Supported Event Types
+
+| Event Type              | Description                           |
+|-------------------------|---------------------------------------|
+| `machine.cycle_complete`| Machine completed a production cycle  |
+| `machine.state_change`  | Machine transitioned between states   |
+| `order.progress`        | Order production count updated        |
+| `order.closed`          | Order finished or manually closed     |
+
+### Retry Behavior
+
+On delivery failure (network error or non-2xx response), the publisher retries with exponential backoff. The base delay doubles on each attempt: 1s, 2s, 4s, etc. Events that fail all retry attempts are dropped.
 
 ---
 

@@ -24,10 +24,11 @@ Access the simulator:
 - **27 machine types** across 8 industrial domains
 - **Production lines** with inter-stage buffers
 - **Order management** — ERP auto-generates orders, MES dispatches to lines
-- **OPC-UA servers** — one per machine with numeric node IDs (`ns=2;i=<NodeID>`)
+- **OPC-UA servers** — one per machine with numeric node IDs (`ns=1;i=<NodeID>`)
 - **Modbus TCP gateway** — single server mapping all machines to holding registers
 - **REST API** — full control over lines, machines, orders, simulation parameters
 - **WebSocket events** — real-time state changes and order progress
+- **Webhook push** — configurable HTTP POST notifications to external systems
 - **Web dashboard** — browser UI for monitoring and control
 
 ## Documentation
@@ -35,6 +36,7 @@ Access the simulator:
 - [Project Overview](docs/README.md) — architecture, prerequisites, profiles, project structure
 - [Configuration Guide](docs/configuration.md) — global settings, line templates, profiles, adapter configs
 - [API Reference](docs/api-reference.md) — REST endpoints, WebSocket events, curl examples
+- [ERP & MES System](docs/erp-mes-system.md) — order lifecycle, data structures, dispatch strategies, OEE inputs
 - [Tag Catalog](docs/tag-catalog.md) — complete tag list for all 27 machine types with OPC-UA node IDs
 
 ## Prerequisites

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS operations (
     machine_id TEXT NOT NULL,
     stage INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'PENDING',
+    planned_cycle_time_ms INTEGER NOT NULL DEFAULT 0,
     good_qty INTEGER NOT NULL DEFAULT 0,
     scrap_qty INTEGER NOT NULL DEFAULT 0,
     started_at TIMESTAMP,

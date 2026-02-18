@@ -209,7 +209,7 @@ func (w *Web) handleSimulation(wr http.ResponseWriter, r *http.Request) {
 // TagRow is a single row in the machine detail tags table.
 type TagRow struct {
 	NodeID      int
-	NodeIDStr   string // OPC-UA format: ns=2;i=N
+	NodeIDStr   string // OPC-UA format: ns=1;i=N
 	Name        string
 	DisplayName string
 	Value       string
@@ -228,7 +228,7 @@ func buildTagRows(defs []machine.TagDefinition, tags map[string]interface{}) []T
 		d := defMap[name]
 		row := TagRow{
 			NodeID:      d.NodeID,
-			NodeIDStr:   fmt.Sprintf("ns=2;i=%d", d.NodeID),
+			NodeIDStr:   fmt.Sprintf("ns=1;i=%d", d.NodeID),
 			Name:        name,
 			DisplayName: d.DisplayName,
 			Unit:        d.Unit,

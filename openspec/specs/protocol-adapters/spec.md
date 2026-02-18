@@ -23,8 +23,8 @@ The system SHALL include a built-in OPC-UA adapter that creates one OPC-UA serve
 - **THEN** machines are assigned ports sequentially: 4840, 4841, 4842, etc., in the order they are registered
 
 #### Scenario: OPC-UA numeric node IDs
-- **WHEN** an OPC-UA client connects to a machine's server with namespace index 2
-- **THEN** each tag is addressable via `ns=2;i=<NodeID>` where NodeID matches the tag's `TagDefinition.NodeID` field (e.g., `ns=2;i=1` for state, `ns=2;i=7` for the first type-specific tag)
+- **WHEN** an OPC-UA client connects to a machine's server with namespace index 1
+- **THEN** each tag is addressable via `ns=1;i=<NodeID>` where NodeID matches the tag's `TagDefinition.NodeID` field (e.g., `ns=1;i=1` for state, `ns=1;i=7` for the first type-specific tag)
 
 #### Scenario: OPC-UA display names
 - **WHEN** an OPC-UA client browses a machine's node tree

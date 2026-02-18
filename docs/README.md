@@ -9,10 +9,11 @@ Machine Simulator 2 creates virtual factory environments with:
 - **27 machine types** across 8 industrial domains (automotive, electronics, food & beverage, pharma, window manufacturing, furniture, metal parts, plastic parts)
 - **Production lines** — sequential machines connected by inter-stage buffers
 - **Order management** — ERP auto-generates orders, MES dispatches them to lines
-- **OPC-UA servers** — one per machine with numeric node IDs (`ns=2;i=<NodeID>`)
+- **OPC-UA servers** — one per machine with numeric node IDs (`ns=1;i=<NodeID>`)
 - **Modbus TCP gateway** — single server mapping all machines to unit IDs and holding registers
 - **REST API** — full control over lines, machines, orders, simulation parameters
 - **WebSocket events** — real-time state changes, cycle completions, order progress
+- **Webhook push** — configurable HTTP POST notifications to external systems (Power BI, data pipelines)
 - **Web dashboard** — browser UI for monitoring and control
 
 ## Prerequisites
@@ -98,6 +99,7 @@ machine-simulator-2/
 
 - [Configuration Guide](configuration.md) — global settings, line templates, profiles, adapter configs
 - [API Reference](api-reference.md) — REST endpoints, WebSocket events, curl examples
+- [ERP & MES System](erp-mes-system.md) — order lifecycle, data structures, dispatch strategies, OEE inputs
 - [Tag Catalog](tag-catalog.md) — complete tag list for all 27 machine types with OPC-UA node IDs
 
 ## Key Concepts
@@ -120,10 +122,10 @@ Each machine exposes **tags** (sensor values/metrics) via OPC-UA and the REST AP
 
 ### OPC-UA Addressing
 
-Tags are addressed using numeric node IDs: `ns=2;i=<NodeID>`
+Tags are addressed using numeric node IDs: `ns=1;i=<NodeID>`
 
-- Base tags: `ns=2;i=1` (state) through `ns=2;i=6` (blocked_by_buffer)
-- Type-specific tags: `ns=2;i=7` and above
+- Base tags: `ns=1;i=1` (state) through `ns=1;i=6` (blocked_by_buffer)
+- Type-specific tags: `ns=1;i=7` and above
 
 Each machine gets its own OPC-UA server on a unique port starting from `base_port` (default 4840).
 

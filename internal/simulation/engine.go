@@ -40,9 +40,10 @@ func (e *Engine) RegisterMachine(m machine.Machine) {
 	defer e.mu.Unlock()
 	e.machines[m.ID()] = m
 
-	// Propagate current time scale and random factor
+	// Propagate current time scale, random factor, and event bus
 	setTimeScale(m, e.timeScale)
 	setRandomFactor(m, e.randomFactor)
+	setEventBus(m, e.bus)
 
 	// Wire state change callback via part complete
 	m.SetOnPartComplete(func(machineID string, good bool) {
@@ -181,5 +182,11 @@ func setTimeScale(m machine.Machine, scale float64) {
 func setRandomFactor(m machine.Machine, factor float64) {
 	if s, ok := m.(interface{ SetRandomFactor(float64) }); ok {
 		s.SetRandomFactor(factor)
+	}
+}
+
+func setEventBus(m machine.Machine, bus *event.Bus) {
+	if s, ok := m.(interface{ SetEventBus(*event.Bus) }); ok {
+		s.SetEventBus(bus)
 	}
 }

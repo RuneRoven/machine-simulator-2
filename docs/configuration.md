@@ -106,6 +106,17 @@ mes:
 | `dispatch_interval_ms` | int | `1000` (built-in default) | > 0 | How often the MES checks for pending orders and dispatches them to lines, in milliseconds. Note: the `global.yaml` shipped with the project sets this to `5000`; the built-in default is `1000`. |
 | `dispatch_strategy` | string | `"round-robin"` | `"round-robin"`, `"priority"` | Strategy for assigning orders to lines. `round-robin` distributes evenly across eligible lines. `priority` prefers lines with shorter queues or higher throughput. |
 
+### Webhook Settings (`webhook`)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Whether to push events to an external URL via HTTP POST. |
+| `target_url` | string | `""` | The URL to POST events to. Required when `enabled` is `true`. |
+| `event_types` | []string | `["machine.cycle_complete", "order.progress", "order.closed", "machine.state_change"]` | Which event types to forward. |
+| `timeout_ms` | int | `5000` | HTTP request timeout per delivery attempt, in milliseconds. |
+| `retry_attempts` | int | `3` | Number of delivery attempts per event. |
+| `retry_delay_ms` | int | `1000` | Base delay between retries in milliseconds. Uses exponential backoff (1s, 2s, 4s, ...). |
+
 ---
 
 ## 3. Line Templates
@@ -460,6 +471,13 @@ Set any of the following `SIMULATOR_*` variables to override the corresponding s
 | `SIMULATOR_MODBUS_PORT` | `modbus.port` | int |
 | `SIMULATOR_MODBUS_MAX_CLIENTS` | `modbus.max_clients` | int |
 | `SIMULATOR_MODBUS_UPDATE_INTERVAL_MS` | `modbus.update_interval_ms` | int |
+
+### Webhook Settings
+
+| Environment Variable | Overrides | Type |
+|---|---|---|
+| `SIMULATOR_WEBHOOK_ENABLED` | `webhook.enabled` | bool (`"true"` or `"1"` to enable) |
+| `SIMULATOR_WEBHOOK_TARGET_URL` | `webhook.target_url` | string |
 
 **Note:** The `env` struct tags in `internal/config/types.go` document the intended mapping for all environment variables. However, only the variables listed in the `applyEnvOverrides` function in `internal/config/loader.go` are actually read at runtime. The following variables are declared in struct tags but **not currently implemented** in the loader: `SIMULATOR_TICK_RATE_MS`, `SIMULATOR_LOG_LEVEL`, `SIMULATOR_ERP_MAX_BACKLOG`, `SIMULATOR_MES_DISPATCH_INTERVAL_MS`, `SIMULATOR_OPCUA_UPDATE_RATE_MS`, `SIMULATOR_OPCUA_MAX_SESSIONS`, `SIMULATOR_MODBUS_PORT`, `SIMULATOR_MODBUS_MAX_CLIENTS`, `SIMULATOR_MODBUS_UPDATE_INTERVAL_MS`.
 
