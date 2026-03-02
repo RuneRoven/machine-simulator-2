@@ -188,20 +188,6 @@ func (a *Adapter) DeregisterMachine(machineID string) error {
 }
 
 func (a *Adapter) updateLoop() {
-	ticker := time.NewTicker(time.Duration(a.cfg.UpdateRateMS) * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-a.ctx.Done():
-			return
-		case <-ticker.C:
-			a.updateAllTags()
-		}
-	}
-}
-
-func (a *Adapter) updateAllTags() {
 	a.mu.RLock()
 	servers := make([]*machineServer, 0, len(a.servers))
 	for _, s := range a.servers {
@@ -209,20 +195,61 @@ func (a *Adapter) updateAllTags() {
 	}
 	a.mu.RUnlock()
 
+	n := len(servers)
+	if n == 0 {
+		return
+	}
+
+	// Stagger updates: spread machines evenly across the update interval
+	// so OPC-UA subscription notifications don't all fire at the same instant.
+	interval := time.Duration(a.cfg.UpdateRateMS) * time.Millisecond
+	stagger := interval / time.Duration(n)
+
+	for i, ms := range servers {
+		offset := stagger * time.Duration(i)
+		go a.machineUpdateLoop(ms, interval, offset)
+	}
+}
+
+// machineUpdateLoop runs a per-machine update ticker, offset from time zero
+// so that machines publish their OPC-UA tags at staggered times.
+func (a *Adapter) machineUpdateLoop(ms *machineServer, interval, offset time.Duration) {
+	// Wait for the initial offset before starting the ticker
+	select {
+	case <-a.ctx.Done():
+		return
+	case <-time.After(offset):
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Do the first update immediately after the offset
+	a.updateMachineTags(ms)
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			a.updateMachineTags(ms)
+		}
+	}
+}
+
+func (a *Adapter) updateMachineTags(ms *machineServer) {
 	now := time.Now()
-	for _, ms := range servers {
-		tags := ms.machine.GetTags()
-		for name, node := range ms.nodes {
-			if val, ok := tags[name]; ok {
-				dv := &ua.DataValue{
-					EncodingMask:    ua.DataValueValue | ua.DataValueStatusCode | ua.DataValueSourceTimestamp | ua.DataValueServerTimestamp,
-					Value:           ua.MustVariant(toOPCUAType(val)),
-					Status:          ua.StatusOK,
-					SourceTimestamp: now,
-					ServerTimestamp: now,
-				}
-				ms.ns.SetAttribute(node.ID(), ua.AttributeIDValue, dv)
+	tags := ms.machine.GetTags()
+	for name, node := range ms.nodes {
+		if val, ok := tags[name]; ok {
+			dv := &ua.DataValue{
+				EncodingMask:    ua.DataValueValue | ua.DataValueStatusCode | ua.DataValueSourceTimestamp | ua.DataValueServerTimestamp,
+				Value:           ua.MustVariant(toOPCUAType(val)),
+				Status:          ua.StatusOK,
+				SourceTimestamp: now,
+				ServerTimestamp: now,
 			}
+			ms.ns.SetAttribute(node.ID(), ua.AttributeIDValue, dv)
 		}
 	}
 }

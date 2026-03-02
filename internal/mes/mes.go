@@ -107,6 +107,11 @@ func (m *MES) SetTimeScale(scale float64) {
 
 // Start begins the MES dispatch loop and subscribes to events.
 func (m *MES) Start(ctx context.Context) {
+	// Restore in-progress orders from a previous run (e.g. after Docker restart).
+	// Machines start fresh with no order assignment, so we must re-assign persisted
+	// IN_PROGRESS orders and kick-start the first machine of each line.
+	m.restoreInProgressOrders()
+
 	// Subscribe to cycle complete events for progress tracking
 	m.bus.Subscribe(event.MachineCycleComplete, func(e event.Event) {
 		m.handleCycleComplete(e.MachineID, e.Data.(bool))
@@ -440,6 +445,70 @@ func (m *MES) completeOrder(orderID string) {
 		Str("order_id", orderID).
 		Int("good_qty", order.GoodQty).
 		Msg("MES: order completed")
+}
+
+// restoreInProgressOrders re-assigns persisted IN_PROGRESS orders to machines
+// after a restart. On a fresh start with an empty database this is a no-op.
+func (m *MES) restoreInProgressOrders() {
+	orders, err := m.orders.List(storage.OrderFilter{Status: "IN_PROGRESS"})
+	if err != nil || len(orders) == 0 {
+		return
+	}
+
+	restored := 0
+	for _, order := range orders {
+		m.mu.RLock()
+		lineRef := m.lines[order.LineInstanceID]
+		m.mu.RUnlock()
+		if lineRef == nil {
+			continue
+		}
+
+		ops, err := m.operations.ListByOrderID(order.ID)
+		if err != nil || len(ops) == 0 {
+			continue
+		}
+
+		// Build machine->operation lookup from persisted operations
+		opByMachine := make(map[string]*storage.Operation, len(ops))
+		for _, op := range ops {
+			opByMachine[op.MachineID] = op
+		}
+
+		// Re-apply recipe overrides
+		r, recipeErr := m.catalog.GetRecipe(lineRef.TemplateName, order.ProductID)
+		if recipeErr == nil {
+			for i, machineID := range lineRef.MachineIDs {
+				stage := lineRef.Stages[i]
+				if ov, ok := r.StageOverrides[stage]; ok {
+					if mach := m.engine.GetMachine(machineID); mach != nil {
+						mach.ApplyRecipeOverrides(ov.ToMachineOverrides())
+					}
+				}
+			}
+		}
+
+		// Re-assign order to all machines and start the first one
+		for i, machineID := range lineRef.MachineIDs {
+			mach := m.engine.GetMachine(machineID)
+			if mach == nil {
+				continue
+			}
+			op := opByMachine[machineID]
+			if op == nil {
+				continue
+			}
+			mach.AssignOrder(order.ID, op.ID, order.ProductID)
+			if i == 0 {
+				mach.SendCommand(machine.CommandStart)
+			}
+		}
+		restored++
+	}
+
+	if restored > 0 {
+		log.Info().Int("count", restored).Msg("MES: restored in-progress orders from previous run")
+	}
 }
 
 // CancelOrder stops an active order and reverts overrides.
