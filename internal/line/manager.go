@@ -227,27 +227,26 @@ func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 		return false
 	}
 
-	// Check: all machines stopped + at least one non-empty buffer
+	// Detect two deadlock patterns:
+	// 1. Classic: all machines stopped + parts stuck in buffers
+	// 2. Buffer flag: machines are RUNNING/IDLE but all blocked/starved with no progress
 	allStopped := true
-	anyRunning := false
+	allStuck := true // true if every machine is either blocked, starved, or idle
 	for _, id := range l.MachineIDs {
 		m := mgr.getMachine(id)
 		if m == nil {
 			continue
 		}
 		state := m.GetState()
-		if state == machine.StateRunning {
-			anyRunning = true
-			allStopped = false
-			break
-		}
+
 		if state != machine.StateStopped {
 			allStopped = false
 		}
-	}
 
-	if anyRunning || !allStopped {
-		return false
+		// A machine is "stuck" if it's idle, or running but blocked/starved
+		if state == machine.StateRunning && !m.IsBlockedByBuffer() && !m.IsStarvedByBuffer() {
+			allStuck = false
+		}
 	}
 
 	hasPartsInBuffers := false
@@ -258,7 +257,10 @@ func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 		}
 	}
 
-	if !hasPartsInBuffers {
+	// Pattern 1: all stopped + parts in buffers
+	// Pattern 2: all stuck (blocked/starved/idle) — progress is impossible
+	isDeadlocked := (allStopped && hasPartsInBuffers) || allStuck
+	if !isDeadlocked {
 		return false
 	}
 
@@ -269,6 +271,7 @@ func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 	for _, id := range l.MachineIDs {
 		if m := mgr.getMachine(id); m != nil {
 			m.SetBlockedByBuffer(false)
+			m.SetStarvedByBuffer(false)
 			if m.GetState() == machine.StateStopped {
 				m.SendCommand(machine.CommandReset)
 			}

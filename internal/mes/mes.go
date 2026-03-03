@@ -420,15 +420,25 @@ func (m *MES) completeOrder(orderID string) {
 		return
 	}
 
-	// Revert recipe overrides
+	// Revert recipe overrides and clear buffer state
 	m.mu.RLock()
 	lineRef := m.lines[order.LineInstanceID]
 	m.mu.RUnlock()
 
 	if lineRef != nil {
+		// Clear buffer flags and order assignments for all machines
 		for _, machineID := range lineRef.MachineIDs {
 			if mach := m.engine.GetMachine(machineID); mach != nil {
+				mach.SetBlockedByBuffer(false)
+				mach.SetStarvedByBuffer(false)
 				mach.ClearOrder()
+			}
+		}
+		// Drain inter-stage buffers so leftovers don't block the next order
+		l := m.lineMgr.GetLine(order.LineInstanceID)
+		if l != nil {
+			for _, b := range l.Buffers {
+				b.Clear()
 			}
 		}
 	}
@@ -529,7 +539,7 @@ func (m *MES) CancelOrder(orderID string) error {
 	// Cancel the order
 	m.orders.UpdateStatus(orderID, "CANCELLED")
 
-	// Revert recipe overrides and clear assignments
+	// Revert recipe overrides, clear buffer state and assignments
 	m.mu.RLock()
 	lineRef := m.lines[order.LineInstanceID]
 	m.mu.RUnlock()
@@ -537,7 +547,15 @@ func (m *MES) CancelOrder(orderID string) error {
 	if lineRef != nil {
 		for _, machineID := range lineRef.MachineIDs {
 			if mach := m.engine.GetMachine(machineID); mach != nil {
+				mach.SetBlockedByBuffer(false)
+				mach.SetStarvedByBuffer(false)
 				mach.ClearOrder()
+			}
+		}
+		l := m.lineMgr.GetLine(order.LineInstanceID)
+		if l != nil {
+			for _, b := range l.Buffers {
+				b.Clear()
 			}
 		}
 	}
