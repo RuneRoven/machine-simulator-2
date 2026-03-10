@@ -145,6 +145,23 @@ func (m *MES) dispatchLoop(ctx context.Context) {
 			return
 		case <-time.After(interval):
 			m.dispatchPendingOrders()
+			m.checkForDeadlocks()
+		}
+	}
+}
+
+// checkForDeadlocks runs the deadlock detector on all lines as a safety net.
+func (m *MES) checkForDeadlocks() {
+	m.mu.RLock()
+	lineIDs := make([]string, 0, len(m.lines))
+	for id := range m.lines {
+		lineIDs = append(lineIDs, id)
+	}
+	m.mu.RUnlock()
+
+	for _, lineID := range lineIDs {
+		if m.lineMgr.DetectAndRecoverDeadlock(lineID) {
+			log.Warn().Str("line", lineID).Msg("MES: deadlock detected and recovered")
 		}
 	}
 }
@@ -227,6 +244,22 @@ func (m *MES) dispatchOrder(order *storage.Order) {
 					mach.ApplyRecipeOverrides(ov.ToMachineOverrides())
 				}
 			}
+		}
+	}
+
+	// Ensure a clean start: clear any stale buffer flags, drain buffers,
+	// and reset all machines to IDLE so they're ready when parts arrive.
+	l := m.lineMgr.GetLine(order.LineInstanceID)
+	if l != nil {
+		for _, b := range l.Buffers {
+			b.Clear()
+		}
+	}
+	for _, machineID := range lineRef.MachineIDs {
+		if mach := m.engine.GetMachine(machineID); mach != nil {
+			mach.SetBlockedByBuffer(false)
+			mach.SetStarvedByBuffer(false)
+			mach.SendCommand(machine.CommandReset) // STOPPED/FAULT → IDLE
 		}
 	}
 
@@ -426,7 +459,9 @@ func (m *MES) completeOrder(orderID string) {
 	m.mu.RUnlock()
 
 	if lineRef != nil {
-		// Clear buffer flags and order assignments for all machines
+		// Clear buffer flags and order assignments. ClearOrder also
+		// transitions machines to IDLE synchronously (no async CommandStop
+		// that could race with the next order's CommandStart).
 		for _, machineID := range lineRef.MachineIDs {
 			if mach := m.engine.GetMachine(machineID); mach != nil {
 				mach.SetBlockedByBuffer(false)
@@ -539,7 +574,7 @@ func (m *MES) CancelOrder(orderID string) error {
 	// Cancel the order
 	m.orders.UpdateStatus(orderID, "CANCELLED")
 
-	// Revert recipe overrides, clear buffer state and assignments
+	// Revert recipe overrides, stop machines, clear buffer state and assignments
 	m.mu.RLock()
 	lineRef := m.lines[order.LineInstanceID]
 	m.mu.RUnlock()

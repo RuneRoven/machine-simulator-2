@@ -255,6 +255,12 @@ func (m *BaseMachine) ClearOrder() {
 		m.breakdownProbability = m.savedBreakdownProbability
 		m.hasRecipeOverride = false
 	}
+	// Transition to IDLE synchronously so machines don't keep running
+	// between orders. This avoids the async CommandStop race where a
+	// stop from the old order kills a newly started order.
+	if m.state == StateRunning || m.state == StateFault {
+		m.setState(StateIdle)
+	}
 }
 
 func (m *BaseMachine) GetCurrentOrder() (orderID, operationID string) {

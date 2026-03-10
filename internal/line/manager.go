@@ -16,15 +16,22 @@ type Manager struct {
 	machineToLine  map[string]string           // machine ID -> line instance ID
 	machines       map[string]machine.Machine  // machine ID -> machine
 	bus            *event.Bus
+
+	// deadlockStrikes tracks consecutive checks where a line had no progressing machine.
+	// Recovery only triggers after deadlockThreshold consecutive strikes.
+	deadlockStrikes map[string]int
 }
+
+const deadlockThreshold = 10
 
 // NewManager creates a new line manager.
 func NewManager(bus *event.Bus) *Manager {
 	return &Manager{
-		lines:         make(map[string]*Line),
-		machineToLine: make(map[string]string),
-		machines:      make(map[string]machine.Machine),
-		bus:           bus,
+		lines:           make(map[string]*Line),
+		machineToLine:   make(map[string]string),
+		machines:        make(map[string]machine.Machine),
+		bus:             bus,
+		deadlockStrikes: make(map[string]int),
 	}
 }
 
@@ -162,6 +169,27 @@ func (mgr *Manager) HandlePartComplete(machineID string, good bool) bool {
 		}
 	}
 
+	// If the downstream machine is starved, feed it immediately.
+	// This prevents the race where downstream sets starvedByBuffer=true
+	// on an empty buffer, then upstream fills it and gets blocked —
+	// without this, nobody clears the starved flag.
+	if added {
+		if downM := mgr.getMachine(downstream.DownstreamMachineID); downM != nil {
+			if downM.IsStarvedByBuffer() {
+				pulled := downstream.Remove()
+				if pulled != nil {
+					downM.SetStarvedByBuffer(false)
+					// Unblock upstream if buffer is no longer full
+					if !downstream.IsFull() {
+						if upM := mgr.getMachine(machineID); upM != nil {
+							upM.SetBlockedByBuffer(false)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return added
 }
 
@@ -218,6 +246,8 @@ func (mgr *Manager) IsDownstreamBlocked(machineID string) bool {
 }
 
 // DetectAndRecoverDeadlock checks a line for deadlock and recovers if found.
+// A line is deadlocked when no machine can make progress: every machine is
+// either IDLE, STOPPED, FAULT, MAINTENANCE, or RUNNING but blocked/starved.
 // Returns true if a deadlock was recovered.
 func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 	mgr.mu.RLock()
@@ -227,44 +257,49 @@ func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 		return false
 	}
 
-	// Detect two deadlock patterns:
-	// 1. Classic: all machines stopped + parts stuck in buffers
-	// 2. Buffer flag: machines are RUNNING/IDLE but all blocked/starved with no progress
-	allStopped := true
-	allStuck := true // true if every machine is either blocked, starved, or idle
+	// A machine is "progressing" if it's RUNNING and neither blocked nor starved.
+	// If no machine is progressing, the line is deadlocked — but only if at
+	// least one machine has an active order (otherwise the line is just idle
+	// between orders, which is normal).
+	anyProgressing := false
+	anyHasOrder := false
 	for _, id := range l.MachineIDs {
 		m := mgr.getMachine(id)
 		if m == nil {
 			continue
 		}
+		orderID, _ := m.GetCurrentOrder()
+		if orderID != "" {
+			anyHasOrder = true
+		}
 		state := m.GetState()
-
-		if state != machine.StateStopped {
-			allStopped = false
-		}
-
-		// A machine is "stuck" if it's idle, or running but blocked/starved
 		if state == machine.StateRunning && !m.IsBlockedByBuffer() && !m.IsStarvedByBuffer() {
-			allStuck = false
-		}
-	}
-
-	hasPartsInBuffers := false
-	for _, b := range l.Buffers {
-		if !b.IsEmpty() {
-			hasPartsInBuffers = true
+			anyProgressing = true
 			break
 		}
 	}
 
-	// Pattern 1: all stopped + parts in buffers
-	// Pattern 2: all stuck (blocked/starved/idle) — progress is impossible
-	isDeadlocked := (allStopped && hasPartsInBuffers) || allStuck
-	if !isDeadlocked {
+	if anyProgressing || !anyHasOrder {
+		mgr.mu.Lock()
+		delete(mgr.deadlockStrikes, lineID)
+		mgr.mu.Unlock()
 		return false
 	}
 
-	// Deadlock detected — recover
+	// Increment strike counter; only recover after sustained deadlock
+	mgr.mu.Lock()
+	mgr.deadlockStrikes[lineID]++
+	strikes := mgr.deadlockStrikes[lineID]
+	mgr.mu.Unlock()
+
+	if strikes < deadlockThreshold {
+		return false
+	}
+
+	// Sustained deadlock confirmed — recover by clearing all buffer state
+	mgr.mu.Lock()
+	delete(mgr.deadlockStrikes, lineID)
+	mgr.mu.Unlock()
 	for _, b := range l.Buffers {
 		b.Clear()
 	}
@@ -272,7 +307,8 @@ func (mgr *Manager) DetectAndRecoverDeadlock(lineID string) bool {
 		if m := mgr.getMachine(id); m != nil {
 			m.SetBlockedByBuffer(false)
 			m.SetStarvedByBuffer(false)
-			if m.GetState() == machine.StateStopped {
+			state := m.GetState()
+			if state == machine.StateStopped || state == machine.StateFault || state == machine.StateMaintenance {
 				m.SendCommand(machine.CommandReset)
 			}
 		}
