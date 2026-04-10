@@ -1,0 +1,144 @@
+{
+  "description": "Shared factory metadata — single source of truth for lines, recipes, and materials. Used by machine-simulator-2, umh-simulator, and sap-dm mock server.",
+  "lines": {
+    "automotive-welding": {
+      "domain": "automotive",
+      "description": "Automotive body welding line for car and truck frames",
+      "stages": ["metal_forming", "spot_welder", "robot_welder", "robot_pick_place"],
+      "recipes": [
+        { "productId": "FRAME-WELD-A", "description": "Car body frame - sedan/hatchback platform", "qtyRange": [20, 60] },
+        { "productId": "FRAME-WELD-B", "description": "Truck body frame - heavy-duty platform", "qtyRange": [10, 30] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-STEEL-SHEET", "description": "Steel Sheet 3mm", "unit": "KG", "qtyPer": 12.0 },
+        { "material": "RM-WELD-WIRE", "description": "MIG Welding Wire 1.2mm", "unit": "KG", "qtyPer": 0.8 }
+      ]
+    },
+    "automotive-assembly": {
+      "domain": "automotive",
+      "description": "Automotive door assembly and painting line",
+      "stages": ["robot_pick_place", "assembly_press", "spot_welder", "painting_booth"],
+      "recipes": [
+        { "productId": "DOOR-ASM-A", "description": "Front door assembly - driver and passenger side", "qtyRange": [30, 80] },
+        { "productId": "DOOR-ASM-B", "description": "Rear door assembly - sedan and SUV models", "qtyRange": [20, 60] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-DOOR-PANEL", "description": "Door Panel Stamping", "unit": "PC", "qtyPer": 2.0 },
+        { "material": "RM-HINGE-KIT", "description": "Hinge Assembly Kit", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-PAINT-PRIMER", "description": "Automotive Paint Primer", "unit": "L", "qtyPer": 0.5 }
+      ]
+    },
+    "electronics-smt": {
+      "domain": "electronics",
+      "description": "Surface-mount technology PCB assembly line",
+      "stages": ["smt_placement", "reflow_oven", "aoi_inspection", "labeling_machine"],
+      "recipes": [
+        { "productId": "PCB-CTRL-A", "description": "Controller board - industrial automation module", "qtyRange": [50, 200] },
+        { "productId": "PCB-PWR-B", "description": "Power supply board - 24V DC regulated output", "qtyRange": [40, 150] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-PCB-BLANK", "description": "PCB Blank Board", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-SMD-REEL", "description": "SMD Component Reel", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-SOLDER-PASTE", "description": "Solder Paste Sn63/Pb37", "unit": "KG", "qtyPer": 0.01 }
+      ]
+    },
+    "electronics-through-hole": {
+      "domain": "electronics",
+      "description": "Through-hole PCB assembly line for high-reliability boards",
+      "stages": ["robot_pick_place", "wave_solder", "aoi_inspection"],
+      "recipes": [
+        { "productId": "THT-MAIN-A", "description": "Mainboard - high-power motor controller", "qtyRange": [20, 80] },
+        { "productId": "THT-SENS-B", "description": "Sensor board - multi-channel analog input module", "qtyRange": [30, 100] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-PCB-BLANK", "description": "PCB Blank Board", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-SOLDER-WIRE", "description": "Solder Wire 0.8mm", "unit": "KG", "qtyPer": 0.05 },
+        { "material": "RM-THT-COMP", "description": "Through-Hole Component Kit", "unit": "PC", "qtyPer": 1.0 }
+      ]
+    },
+    "food-beverage-filling": {
+      "domain": "food-beverage",
+      "description": "High-speed beverage filling and labeling line",
+      "stages": ["filling_machine", "sealing_machine", "labeling_machine"],
+      "recipes": [
+        { "productId": "JUICE-500ML", "description": "500ml fruit juice bottles - orange and apple blend", "qtyRange": [200, 1000] },
+        { "productId": "WATER-1L", "description": "1 liter purified water bottles", "qtyRange": [300, 1500] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-JUICE-CONC", "description": "Juice Concentrate", "unit": "L", "qtyPer": 0.3 },
+        { "material": "RM-BOTTLE-PET", "description": "PET Bottle Preform", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-CAP-HDPE", "description": "HDPE Bottle Cap", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-LABEL-ROLL", "description": "Label Roll", "unit": "PC", "qtyPer": 1.0 }
+      ]
+    },
+    "pharma-batch": {
+      "domain": "pharma",
+      "description": "Pharmaceutical batch processing and filling line",
+      "stages": ["reactor_vessel", "pharma_filler", "capping_machine"],
+      "recipes": [
+        { "productId": "TABLET-BATCH-A", "description": "Pain reliever tablet batch - 500mg ibuprofen", "qtyRange": [5, 20] },
+        { "productId": "SYRUP-BATCH-B", "description": "Cough syrup batch - 200ml bottles", "qtyRange": [5, 15] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-API-IBU", "description": "Active Pharmaceutical Ingredient - Ibuprofen", "unit": "KG", "qtyPer": 2.5 },
+        { "material": "RM-EXCIPIENT", "description": "Excipient Powder Blend", "unit": "KG", "qtyPer": 5.0 },
+        { "material": "RM-VIAL-GLASS", "description": "Glass Vial 200ml", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-CAP-ALUM", "description": "Aluminum Tamper-Evident Cap", "unit": "PC", "qtyPer": 1.0 }
+      ]
+    },
+    "window-frame": {
+      "domain": "window",
+      "description": "Window frame fabrication and glazing line",
+      "stages": ["profile_cutter", "corner_welder", "glass_setter"],
+      "recipes": [
+        { "productId": "WIN-STD-A", "description": "Standard window - 120x100cm double-glazed", "qtyRange": [10, 40] },
+        { "productId": "WIN-LRG-B", "description": "Large panorama window - 240x180cm triple-glazed", "qtyRange": [5, 15] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-PVC-PROFILE", "description": "PVC Profile Extrusion 6m", "unit": "PC", "qtyPer": 2.0 },
+        { "material": "RM-GLASS-PANE", "description": "Glass Pane 4mm Tempered", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-SEAL-RUBBER", "description": "EPDM Rubber Seal Strip", "unit": "M", "qtyPer": 4.0 }
+      ]
+    },
+    "furniture-assembly": {
+      "domain": "furniture",
+      "description": "Furniture panel machining and assembly line",
+      "stages": ["cnc_router", "edge_bander", "assembly_press"],
+      "recipes": [
+        { "productId": "DESK-OAK-A", "description": "Oak desk top - 160x80cm with cable management cutout", "qtyRange": [10, 30] },
+        { "productId": "SHELF-PINE-B", "description": "Pine shelf unit - 80x30cm with three adjustable shelves", "qtyRange": [15, 50] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-MDF-SHEET", "description": "MDF Sheet 18mm 2440x1220", "unit": "PC", "qtyPer": 1.0 },
+        { "material": "RM-EDGE-TAPE", "description": "Edge Banding Tape PVC 2mm", "unit": "M", "qtyPer": 6.0 },
+        { "material": "RM-DOWEL-KIT", "description": "Wooden Dowel Assembly Kit", "unit": "PC", "qtyPer": 1.0 }
+      ]
+    },
+    "metal-parts-fabrication": {
+      "domain": "metal-parts",
+      "description": "Sheet metal cutting, bending, and finishing line",
+      "stages": ["laser_cutter", "press_brake", "deburring_machine"],
+      "recipes": [
+        { "productId": "BRACKET-SS-A", "description": "Stainless steel mounting bracket - 3mm 304SS", "qtyRange": [50, 200] },
+        { "productId": "PANEL-AL-B", "description": "Aluminum enclosure panel - 2mm 5052-H32", "qtyRange": [30, 100] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-STEEL-SHEET-SS", "description": "Stainless Steel Sheet 304 3mm", "unit": "KG", "qtyPer": 2.5 },
+        { "material": "RM-ALUM-SHEET", "description": "Aluminum Sheet 5052-H32 2mm", "unit": "KG", "qtyPer": 1.8 }
+      ]
+    },
+    "plastic-parts-molding": {
+      "domain": "plastic-parts",
+      "description": "Plastic extrusion, injection molding, and trimming line",
+      "stages": ["extruder", "injection_molding", "trimming_press"],
+      "recipes": [
+        { "productId": "HOUSING-ABS-A", "description": "ABS electronics housing - IP65 rated enclosure", "qtyRange": [40, 150] },
+        { "productId": "PIPE-PVC-B", "description": "PVC pipe fitting - 50mm elbow connector", "qtyRange": [80, 300] }
+      ],
+      "rawMaterials": [
+        { "material": "RM-ABS-PELLET", "description": "ABS Resin Pellets", "unit": "KG", "qtyPer": 0.35 },
+        { "material": "RM-PVC-RESIN", "description": "PVC Compound Resin", "unit": "KG", "qtyPer": 0.25 }
+      ]
+    }
+  }
+}
