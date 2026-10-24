@@ -101,3 +101,17 @@ func (so StageOverride) ToMachineOverrides() machine.RecipeOverrides {
 		BreakdownProbability: so.BreakdownProbability,
 	}
 }
+
+// StageOverrides returns a product's machine overrides keyed by stage number.
+// It lets the line manager apply a recipe when a job is loaded.
+func (c *Catalog) StageOverrides(templateName, productID string) (map[int]machine.RecipeOverrides, error) {
+	r, err := c.GetRecipe(templateName, productID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]machine.RecipeOverrides, len(r.StageOverrides))
+	for stage, so := range r.StageOverrides {
+		out[stage] = so.ToMachineOverrides()
+	}
+	return out, nil
+}

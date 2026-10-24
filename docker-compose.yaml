@@ -4,6 +4,8 @@ services:
     ports:
       - "8081:8081"
       - "4840-4880:4840-4880"
+      # Line job servers (orders.source: external)
+      - "4900-4909:4900-4909"
       - "502:502"
     environment:
       # Option 1: Per-line env vars (takes priority if any are set > 0)
@@ -17,6 +19,8 @@ services:
       SIMULATOR_LINE_FURNITURE_ASSEMBLY: ${SIMULATOR_LINE_FURNITURE_ASSEMBLY:-0}
       SIMULATOR_LINE_METAL_PARTS_FABRICATION: ${SIMULATOR_LINE_METAL_PARTS_FABRICATION:-0}
       SIMULATOR_LINE_PLASTIC_PARTS_MOLDING: ${SIMULATOR_LINE_PLASTIC_PARTS_MOLDING:-0}
+      # internal: built-in ERP/MES; external: an outside MES loads line jobs
+      SIMULATOR_ORDERS_SOURCE: ${SIMULATOR_ORDERS_SOURCE:-internal}
       # OPC-UA hostname override for Docker networking
       SIMULATOR_OPCUA_HOSTNAME: simulator
       # Option 2: Profile-based (fallback if no SIMULATOR_LINE_* vars > 0)

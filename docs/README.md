@@ -100,6 +100,7 @@ machine-simulator-2/
 - [Configuration Guide](configuration.md) — global settings, line templates, profiles, adapter configs
 - [API Reference](api-reference.md) — REST endpoints, WebSocket events, curl examples
 - [ERP & MES System](erp-mes-system.md) — order lifecycle, data structures, dispatch strategies, OEE inputs
+- [Line Jobs and Part Flow](line-job-control.md) — job lifecycle, part ledger, external order source, line OPC UA server
 - [Tag Catalog](tag-catalog.md) — complete tag list for all 27 machine types with OPC-UA node IDs
 
 ## Key Concepts

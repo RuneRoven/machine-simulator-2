@@ -116,7 +116,7 @@ func (a *Adapter) RegisterMachine(m machine.Machine, cfg protocol.AdapterMachine
 	var addr uint16
 	var entries []RegisterEntry
 
-	for _, td := range m.GetTagDefinitions() {
+	for _, td := range machine.AllTagDefinitions(m) {
 		entry := RegisterEntry{
 			TagName:     td.Name,
 			DisplayName: td.DisplayName,

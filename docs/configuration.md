@@ -84,6 +84,15 @@ mes:
 | `tick_rate_ms` | int | `100` | > 0 | Simulation tick interval in milliseconds. Lower values increase simulation resolution at the cost of higher CPU usage. |
 | `log_level` | string | `"info"` | `"debug"`, `"info"`, `"warn"`, `"error"` | Minimum log level for console output. |
 
+### Orders and stall detection
+
+| Field | Env | Default | Description |
+|---|---|---|---|
+| `orders.source` | `SIMULATOR_ORDERS_SOURCE` | `internal` | `internal`: built-in ERP and MES. `external`: an outside MES loads jobs; see [Line Jobs](line-job-control.md) |
+| `deadlock_threshold_ms` | `SIMULATOR_DEADLOCK_THRESHOLD_MS` | derived | No part movement for this long (no machine faulted) restarts the line. Unset: longest `auto_restore_time_ms` + 60 s, at least 120 s. Must exceed every `auto_restore_time_ms` |
+| (database path) | `SIMULATOR_DB_PATH` | `data/simulator.db` | SQLite file; `docker-compose.yaml` mounts `./data` so it survives rebuilds |
+| `adapters.opcua.line_base_port` | `SIMULATOR_OPCUA_LINE_BASE_PORT` | `4900` | First port of the per-line job servers (external mode) |
+
 ### API Settings (`api`)
 
 | Field | Type | Default | Description |

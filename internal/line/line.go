@@ -1,6 +1,7 @@
 package line
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 // Part represents an individual item flowing through a production line.
 type Part struct {
 	ID              string
+	JobID           string
 	OrderID         string
 	OperationID     string
+	ProductID       string
 	IsGood          bool
 	CreatedAt       time.Time
 	EnteredBufferAt time.Time
@@ -20,10 +23,10 @@ type Part struct {
 // NewPart creates a new part.
 func NewPart(orderID, operationID string) *Part {
 	return &Part{
-		ID:        uuid.New().String(),
-		OrderID:   orderID,
+		ID:          uuid.New().String(),
+		OrderID:     orderID,
 		OperationID: operationID,
-		CreatedAt: time.Now(),
+		CreatedAt:   time.Now(),
 	}
 }
 
@@ -38,6 +41,7 @@ type Buffer struct {
 	MaxCapacity         int
 
 	parts           []*Part
+	totalIn         int64
 	totalThroughput int64
 }
 
@@ -62,6 +66,7 @@ func (b *Buffer) Add(p *Part) bool {
 	}
 	p.EnteredBufferAt = time.Now()
 	b.parts = append(b.parts, p)
+	b.totalIn++
 	return true
 }
 
@@ -109,13 +114,48 @@ func (b *Buffer) Count() int {
 	return len(b.parts)
 }
 
-// Clear removes all parts from the buffer.
-func (b *Buffer) Clear() int {
+// Capacity returns the buffer's max capacity.
+func (b *Buffer) Capacity() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.MaxCapacity
+}
+
+// forEach calls fn for every part in the buffer, front first.
+func (b *Buffer) forEach(fn func(p *Part)) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, p := range b.parts {
+		fn(p)
+	}
+}
+
+// removeIf removes the parts matching match and returns how many it removed.
+// Removed parts do not count as throughput.
+func (b *Buffer) removeIf(match func(p *Part) bool) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	cleared := len(b.parts)
-	b.parts = b.parts[:0]
-	return cleared
+	kept := b.parts[:0]
+	removed := 0
+	for _, p := range b.parts {
+		if match(p) {
+			removed++
+			continue
+		}
+		kept = append(kept, p)
+	}
+	for i := len(kept); i < len(b.parts); i++ {
+		b.parts[i] = nil
+	}
+	b.parts = kept
+	return removed
+}
+
+// TotalIn returns the number of parts that have entered the buffer.
+func (b *Buffer) TotalIn() int64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.totalIn
 }
 
 // TotalThroughput returns the total number of parts that have passed through.
@@ -137,7 +177,8 @@ type Line struct {
 	InstanceID   string
 	TemplateName string
 	Domain       string
-	MachineIDs   []string // ordered by stage
+	MachineIDs   []string           // ordered by stage
+	Stages       []int              // stage number per entry of MachineIDs
 	Buffers      map[string]*Buffer // keyed by buffer ID
 	Recipes      []RecipeRef
 }
@@ -162,4 +203,20 @@ func (l *Line) OrderedBuffers() []*Buffer {
 type RecipeRef struct {
 	ProductID   string
 	Description string
+}
+
+// ValidateProduct returns ErrUnknownProduct when the line has a recipe list and
+// productID is not on it.
+func (l *Line) ValidateProduct(productID string) error {
+	if len(l.Recipes) == 0 {
+		return nil
+	}
+	valid := make([]string, 0, len(l.Recipes))
+	for _, r := range l.Recipes {
+		if r.ProductID == productID {
+			return nil
+		}
+		valid = append(valid, r.ProductID)
+	}
+	return fmt.Errorf("%w %q for line %s, valid: %v", ErrUnknownProduct, productID, l.InstanceID, valid)
 }

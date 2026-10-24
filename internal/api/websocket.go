@@ -51,6 +51,8 @@ func NewHub(bus *event.Bus) *Hub {
 		event.BufferFull,
 		event.BufferEmpty,
 		event.LineDeadlockRecovered,
+		event.LineJobChanged,
+		event.LinePartBooked,
 	}
 
 	for _, et := range eventTypes {

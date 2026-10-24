@@ -155,7 +155,7 @@ func (w *Web) handleMachineDetail(wr http.ResponseWriter, r *http.Request) {
 
 	// Build sorted tag list with definitions
 	tags := m.GetTags()
-	defs := m.GetTagDefinitions()
+	defs := machine.AllTagDefinitions(m)
 	tagRows := buildTagRows(defs, tags)
 
 	port := 0

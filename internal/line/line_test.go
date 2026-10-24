@@ -54,20 +54,6 @@ func TestBufferEmpty(t *testing.T) {
 	}
 }
 
-func TestBufferClear(t *testing.T) {
-	b := NewBuffer("buf1", "line1", "m1", "m2", 5)
-	b.Add(NewPart("o1", "op1"))
-	b.Add(NewPart("o2", "op2"))
-
-	cleared := b.Clear()
-	if cleared != 2 {
-		t.Errorf("expected 2 cleared, got %d", cleared)
-	}
-	if !b.IsEmpty() {
-		t.Error("buffer should be empty after clear")
-	}
-}
-
 func TestBufferPeek(t *testing.T) {
 	b := NewBuffer("buf1", "line1", "m1", "m2", 5)
 	b.Add(NewPart("o1", "op1"))

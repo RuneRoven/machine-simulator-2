@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -28,20 +31,21 @@ import (
 
 // App is the composition root for the simulator.
 type App struct {
-	cfg     *config.Config
-	bus     *event.Bus
-	db      *sql.DB
-	engine  *simulation.Engine
-	lineMgr *line.Manager
-	catalog *recipe.Catalog
-	orders  *storage.OrderRepository
-	ops     *storage.OperationRepository
-	erp     *erp.ERP
-	mes     *mes.MES
-	adapters  []protocol.Adapter
-	webhookPub *webhook.Publisher
-	httpSrv   *http.Server
-	wsHub     *api.Hub
+	cfg         *config.Config
+	bus         *event.Bus
+	db          *sql.DB
+	engine      *simulation.Engine
+	lineMgr     *line.Manager
+	catalog     *recipe.Catalog
+	orders      *storage.OrderRepository
+	ops         *storage.OperationRepository
+	erp         *erp.ERP
+	mes         *mes.MES
+	adapters    []protocol.Adapter
+	lineServers *opcuaAdapter.LineServers
+	webhookPub  *webhook.Publisher
+	httpSrv     *http.Server
+	wsHub       *api.Hub
 }
 
 // New creates and wires all components.
@@ -52,7 +56,14 @@ func New(cfg *config.Config) (*App, error) {
 	app.bus = event.New()
 
 	// Database
-	db, err := storage.NewDB("simulator.db")
+	dbPath := os.Getenv("SIMULATOR_DB_PATH")
+	if dbPath == "" {
+		dbPath = filepath.Join("data", "simulator.db")
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("creating database directory: %w", err)
+	}
+	db, err := storage.NewDB(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -69,6 +80,9 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Line manager
 	app.lineMgr = line.NewManager(app.bus)
+	app.lineMgr.SetRecipeSource(app.catalog)
+	// Book parts before anyone else (MES, webhook) sees the cycle.
+	app.lineMgr.SubscribeCycleEvents()
 
 	// Instantiate lines from config
 	for _, li := range cfg.Lines {
@@ -142,12 +156,25 @@ func New(cfg *config.Config) (*App, error) {
 		}
 	}
 
-	// Webhook publisher
+	// Line job servers ("line PLCs") for an external MES
+	if cfg.Adapters.OPCUA.Enabled && cfg.Global.Orders.External() {
+		app.lineServers = opcuaAdapter.NewLineServers(cfg.Adapters.OPCUA, app.lineMgr)
+		for _, l := range app.lineMgr.GetAllLines() {
+			app.lineServers.Register(l.InstanceID)
+		}
+	}
+
+	// Webhook publisher. With an external order source the simulator has no
+	// orders of its own, so order events are not sent.
 	if cfg.Global.Webhook.Enabled {
+		eventTypes := cfg.Global.Webhook.EventTypes
+		if cfg.Global.Orders.External() {
+			eventTypes = withoutOrderEvents(eventTypes)
+		}
 		whCfg := webhook.Config{
 			Enabled:       cfg.Global.Webhook.Enabled,
 			TargetURL:     cfg.Global.Webhook.TargetURL,
-			EventTypes:    cfg.Global.Webhook.EventTypes,
+			EventTypes:    eventTypes,
 			TimeoutMS:     cfg.Global.Webhook.TimeoutMS,
 			RetryAttempts: cfg.Global.Webhook.RetryAttempts,
 			RetryDelayMS:  cfg.Global.Webhook.RetryDelayMS,
@@ -160,6 +187,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	// HTTP server (API + Web)
 	apiServer := api.NewServer(app.engine, app.lineMgr, app.orders, app.ops, app.erp, app.mes, app.catalog, app.wsHub)
+	apiServer.SetExternalOrders(cfg.Global.Orders.External())
 
 	// Wire Modbus register map endpoint if enabled
 	if cfg.Adapters.Modbus.Enabled {
@@ -223,11 +251,18 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 
-	// Start ERP
-	a.erp.Start(ctx)
+	go a.watchStalls(ctx)
 
-	// Start MES
-	a.mes.Start(ctx)
+	if a.lineServers != nil {
+		a.lineServers.Start(ctx)
+	}
+
+	if a.cfg.Global.Orders.External() {
+		log.Info().Msg("orders.source=external: built-in ERP and MES are off, lines wait for jobs")
+	} else {
+		a.erp.Start(ctx)
+		a.mes.Start(ctx)
+	}
 
 	// Start webhook publisher
 	if a.webhookPub != nil {
@@ -270,4 +305,36 @@ func (a *App) Run(ctx context.Context) error {
 
 	log.Info().Msg("Simulator stopped")
 	return nil
+}
+
+// watchStalls restarts lines whose job stopped moving parts for longer than
+// the deadlock threshold (in simulated time) while no machine is faulted.
+func (a *App) watchStalls(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			scale := a.engine.GetTimeScale()
+			if scale <= 0 {
+				scale = 1
+			}
+			threshold := time.Duration(float64(a.cfg.Global.DeadlockThresholdMS)/scale) * time.Millisecond
+			for _, id := range a.lineMgr.CheckStalls(now, threshold) {
+				log.Warn().Str("line", id).Msg("line stalled without a fault; restarted")
+			}
+		}
+	}
+}
+
+func withoutOrderEvents(types []string) []string {
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		if !strings.HasPrefix(t, "order.") {
+			out = append(out, t)
+		}
+	}
+	return out
 }

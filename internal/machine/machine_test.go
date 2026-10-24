@@ -181,13 +181,15 @@ func TestBlockedByBuffer(t *testing.T) {
 
 	// Let some cycles complete first
 	time.Sleep(300 * time.Millisecond)
-	preBlockCount := m.GetBaseData().CycleCount
 
-	// Block the machine
+	// Block the machine, then let a tick that was already running finish
+	// before taking the reference count.
 	m.SetBlockedByBuffer(true)
 	if !m.IsBlockedByBuffer() {
 		t.Error("expected blocked")
 	}
+	time.Sleep(150 * time.Millisecond)
+	preBlockCount := m.GetBaseData().CycleCount
 
 	time.Sleep(300 * time.Millisecond)
 	blockedCount := m.GetBaseData().CycleCount

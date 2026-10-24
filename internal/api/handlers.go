@@ -2,6 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -30,6 +33,15 @@ type Server struct {
 	wsHub   *Hub
 
 	modbusRegMapFn func() interface{}
+
+	// externalOrders is set when an outside MES loads jobs; the built-in
+	// order creation is then refused.
+	externalOrders bool
+}
+
+// SetExternalOrders switches order creation off in favour of the job API.
+func (s *Server) SetExternalOrders(external bool) {
+	s.externalOrders = external
 }
 
 // SetModbusRegisterMapFn sets the function to retrieve the Modbus register map.
@@ -78,6 +90,9 @@ func (s *Server) Router() http.Handler {
 		r.Get("/lines/{id}/buffers", s.handleGetLineBuffers)
 		r.Post("/lines/{id}/start", s.handleStartLine)
 		r.Post("/lines/{id}/stop", s.handleStopLine)
+		r.Get("/lines/{id}/job", s.handleGetJob)
+		r.Put("/lines/{id}/job", s.handleLoadJob)
+		r.Post("/lines/{id}/job/{command}", s.handleJobCommand)
 
 		// Machines
 		r.Get("/machines", s.handleGetMachines)
@@ -134,7 +149,7 @@ func (s *Server) handleGetLines(w http.ResponseWriter, r *http.Request) {
 	lines := s.lineMgr.GetAllLines()
 	result := make([]lineResponse, 0, len(lines))
 	for _, l := range lines {
-		result = append(result, toLineResponse(l))
+		result = append(result, s.toLineResponse(l))
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -146,7 +161,7 @@ func (s *Server) handleGetLine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "line not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toLineResponse(l))
+	writeJSON(w, http.StatusOK, s.toLineResponse(l))
 }
 
 func (s *Server) handleGetLineBuffers(w http.ResponseWriter, r *http.Request) {
@@ -193,6 +208,78 @@ func (s *Server) handleStopLine(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+// Line jobs
+
+func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
+	js, err := s.lineMgr.Job(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJobError(w, err, js)
+		return
+	}
+	writeJSON(w, http.StatusOK, js)
+}
+
+func (s *Server) handleLoadJob(w http.ResponseWriter, r *http.Request) {
+	var spec line.JobSpec
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&spec); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	js, err := s.lineMgr.LoadJob(id, spec)
+	if err != nil {
+		js, _ = s.lineMgr.Job(id)
+		writeJobError(w, err, js)
+		return
+	}
+	writeJSON(w, http.StatusOK, js)
+}
+
+func (s *Server) handleJobCommand(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var (
+		js  line.JobStatus
+		err error
+	)
+	switch chi.URLParam(r, "command") {
+	case "start":
+		js, err = s.lineMgr.StartJob(id)
+	case "interrupt":
+		js, err = s.lineMgr.InterruptJob(id)
+	case "finish":
+		var final line.JobStatus
+		if final, err = s.lineMgr.FinishJob(id); err == nil {
+			js, _ = s.lineMgr.Job(id)
+			writeJSON(w, http.StatusOK, map[string]interface{}{"job": js, "finished": final})
+			return
+		}
+	default:
+		writeError(w, http.StatusNotFound, "unknown job command, use start, interrupt or finish")
+		return
+	}
+	if err != nil {
+		if cur, jerr := s.lineMgr.Job(id); jerr == nil {
+			js = cur
+		}
+		writeJobError(w, err, js)
+		return
+	}
+	writeJSON(w, http.StatusOK, js)
+}
+
+func writeJobError(w http.ResponseWriter, err error, js line.JobStatus) {
+	code := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, line.ErrUnknownLine):
+		code = http.StatusNotFound
+	case errors.Is(err, line.ErrInvalidTransition):
+		code = http.StatusConflict
+	case errors.Is(err, line.ErrUnknownProduct), errors.Is(err, line.ErrInvalidJob):
+		code = http.StatusBadRequest
+	}
+	writeJSON(w, code, map[string]interface{}{"error": err.Error(), "job": js})
 }
 
 // Machines
@@ -281,6 +368,10 @@ func (s *Server) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
+	if s.externalOrders {
+		writeError(w, http.StatusConflict, "orders.source is external: load jobs with PUT /api/lines/{id}/job")
+		return
+	}
 	var req struct {
 		LineInstanceID string `json:"line_instance_id"`
 		LineTemplate   string `json:"line_template"`
@@ -294,6 +385,26 @@ func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Priority == 0 {
 		req.Priority = 50
+	}
+	l := s.lineMgr.GetLine(req.LineInstanceID)
+	if l == nil {
+		active := make([]string, 0)
+		for _, al := range s.lineMgr.GetAllLines() {
+			active = append(active, al.InstanceID)
+		}
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown line_instance_id %q, active lines: %v", req.LineInstanceID, active))
+		return
+	}
+	if err := l.ValidateProduct(req.ProductID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.PlannedQty <= 0 {
+		writeError(w, http.StatusBadRequest, "planned_qty must be > 0")
+		return
+	}
+	if req.LineTemplate == "" {
+		req.LineTemplate = l.TemplateName
 	}
 
 	order, err := s.erp.CreateManualOrder(req.LineInstanceID, req.LineTemplate, req.ProductID, req.PlannedQty, req.Priority)
@@ -550,11 +661,13 @@ func (s *Server) handleUpdateBufferSettings(w http.ResponseWriter, r *http.Reque
 
 // Response types
 type lineResponse struct {
-	InstanceID   string       `json:"instance_id"`
-	TemplateName string       `json:"template_name"`
-	Domain       string       `json:"domain"`
-	MachineIDs   []string     `json:"machine_ids"`
-	Recipes      []recipeRef  `json:"recipes"`
+	InstanceID   string         `json:"instance_id"`
+	TemplateName string         `json:"template_name"`
+	Domain       string         `json:"domain"`
+	MachineIDs   []string       `json:"machine_ids"`
+	Recipes      []recipeRef    `json:"recipes"`
+	Job          line.JobStatus `json:"job"`
+	Ledger       line.Ledger    `json:"ledger"`
 }
 
 type recipeRef struct {
@@ -568,6 +681,8 @@ type bufferResponse struct {
 	DownstreamMachineID string `json:"downstream_machine_id"`
 	Capacity            int    `json:"capacity"`
 	Count               int    `json:"count"`
+	InCount             int64  `json:"in_count"`
+	OutCount            int64  `json:"out_count"`
 	TotalThroughput     int64  `json:"total_throughput"`
 }
 
@@ -598,18 +713,21 @@ func SetOPCUAPortLookup(fn OPCUAPortLookup) {
 	opcuaPortLookup = fn
 }
 
-func toLineResponse(l *line.Line) lineResponse {
+func (s *Server) toLineResponse(l *line.Line) lineResponse {
 	recipes := make([]recipeRef, 0, len(l.Recipes))
 	for _, r := range l.Recipes {
 		recipes = append(recipes, recipeRef{ProductID: r.ProductID, Description: r.Description})
 	}
-	return lineResponse{
+	resp := lineResponse{
 		InstanceID:   l.InstanceID,
 		TemplateName: l.TemplateName,
 		Domain:       l.Domain,
 		MachineIDs:   l.MachineIDs,
 		Recipes:      recipes,
 	}
+	resp.Job, _ = s.lineMgr.Job(l.InstanceID)
+	resp.Ledger, _ = s.lineMgr.Ledger(l.InstanceID)
+	return resp
 }
 
 func toBufferResponse(b *line.Buffer) bufferResponse {
@@ -617,8 +735,10 @@ func toBufferResponse(b *line.Buffer) bufferResponse {
 		ID:                  b.ID,
 		UpstreamMachineID:   b.UpstreamMachineID,
 		DownstreamMachineID: b.DownstreamMachineID,
-		Capacity:            b.MaxCapacity,
+		Capacity:            b.Capacity(),
 		Count:               b.Count(),
+		InCount:             b.TotalIn(),
+		OutCount:            b.TotalThroughput(),
 		TotalThroughput:     b.TotalThroughput(),
 	}
 }

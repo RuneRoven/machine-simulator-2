@@ -4,16 +4,18 @@ import "sync"
 
 // Event type constants.
 const (
-	MachineStateChange = "machine.state_change"
-	MachineCycleComplete = "machine.cycle_complete"
-	LinePartMoved      = "line.part_moved"
-	OrderCreated       = "order.created"
-	OrderReleased      = "order.released"
-	OrderProgress      = "order.progress"
-	OrderClosed        = "order.closed"
-	BufferFull         = "buffer.full"
-	BufferEmpty        = "buffer.empty"
+	MachineStateChange    = "machine.state_change"
+	MachineCycleComplete  = "machine.cycle_complete"
+	LinePartMoved         = "line.part_moved"
+	OrderCreated          = "order.created"
+	OrderReleased         = "order.released"
+	OrderProgress         = "order.progress"
+	OrderClosed           = "order.closed"
+	BufferFull            = "buffer.full"
+	BufferEmpty           = "buffer.empty"
 	LineDeadlockRecovered = "line.deadlock_recovered"
+	LineJobChanged        = "line.job_changed"
+	LinePartBooked        = "line.part_booked"
 )
 
 // Event represents a typed event published on the bus.

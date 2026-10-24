@@ -7,6 +7,8 @@ func DefaultGlobalConfig() GlobalConfig {
 		RandomFactor: 0.1,
 		TickRateMS:   100,
 		LogLevel:     "info",
+
+		Orders: OrdersConfig{Source: OrderSourceInternal},
 		API: APIConfig{
 			Host: "0.0.0.0",
 			Port: 8081,
@@ -28,6 +30,7 @@ func DefaultOPCUAAdapterConfig() OPCUAAdapterConfig {
 	return OPCUAAdapterConfig{
 		Enabled:      true,
 		BasePort:     4840,
+		LineBasePort: 4900,
 		UpdateRateMS: 100,
 		MaxSessions:  100,
 		Hostname:     "localhost",

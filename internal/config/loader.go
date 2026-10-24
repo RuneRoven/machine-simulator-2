@@ -69,6 +69,8 @@ func Load(configDir, profileName string) (*Config, error) {
 		return nil, fmt.Errorf("instantiating lines: %w", err)
 	}
 
+	resolveDeadlockThreshold(cfg)
+
 	// 8. Validate
 	if err := Validate(cfg); err != nil {
 		return nil, fmt.Errorf("config validation: %w", err)
@@ -148,6 +150,14 @@ func applyEnvOverrides(global *GlobalConfig, adapters *AdaptersConfig) {
 			global.RandomFactor = f
 		}
 	}
+	if v := os.Getenv("SIMULATOR_ORDERS_SOURCE"); v != "" {
+		global.Orders.Source = v
+	}
+	if v := os.Getenv("SIMULATOR_DEADLOCK_THRESHOLD_MS"); v != "" {
+		if i, ok := parseInt(v); ok {
+			global.DeadlockThresholdMS = i
+		}
+	}
 	if v := os.Getenv("SIMULATOR_API_HOST"); v != "" {
 		global.API.Host = v
 	}
@@ -176,6 +186,11 @@ func applyEnvOverrides(global *GlobalConfig, adapters *AdaptersConfig) {
 	if v := os.Getenv("SIMULATOR_OPCUA_BASE_PORT"); v != "" {
 		if i, ok := parseInt(v); ok {
 			adapters.OPCUA.BasePort = i
+		}
+	}
+	if v := os.Getenv("SIMULATOR_OPCUA_LINE_BASE_PORT"); v != "" {
+		if i, ok := parseInt(v); ok {
+			adapters.OPCUA.LineBasePort = i
 		}
 	}
 	if v := os.Getenv("SIMULATOR_MODBUS_ENABLED"); v != "" {
@@ -399,6 +414,8 @@ func LoadFromLineEnvVars(configDir string) (*Config, error) {
 	}
 
 	// 7. Validate
+	resolveDeadlockThreshold(cfg)
+
 	if err := Validate(cfg); err != nil {
 		return nil, fmt.Errorf("config validation: %w", err)
 	}
@@ -436,6 +453,12 @@ func Validate(cfg *Config) error {
 		}
 	}
 
+	switch cfg.Global.Orders.Source {
+	case OrderSourceInternal, OrderSourceExternal:
+	default:
+		return fmt.Errorf("orders.source must be %q or %q, got %q", OrderSourceInternal, OrderSourceExternal, cfg.Global.Orders.Source)
+	}
+
 	// Validate value ranges
 	if cfg.Global.TimeScale < 0 {
 		return fmt.Errorf("time_scale must be >= 0, got %f", cfg.Global.TimeScale)
@@ -446,6 +469,10 @@ func Validate(cfg *Config) error {
 
 	for _, li := range cfg.Lines {
 		for _, m := range li.Machines {
+			if m.AutoRestoreTimeMS >= cfg.Global.DeadlockThresholdMS {
+				return fmt.Errorf("deadlock_threshold_ms (%d) must exceed auto_restore_time_ms of machine %q (%d)",
+					cfg.Global.DeadlockThresholdMS, m.ID, m.AutoRestoreTimeMS)
+			}
 			if m.ScrapRate < 0 || m.ScrapRate > 1.0 {
 				return fmt.Errorf("machine %q scrap_rate must be between 0 and 1, got %f", m.ID, m.ScrapRate)
 			}
@@ -456,4 +483,18 @@ func Validate(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// resolveDeadlockThreshold fills in the deadlock threshold when it is not set.
+func resolveDeadlockThreshold(cfg *Config) {
+	if cfg.Global.DeadlockThresholdMS > 0 {
+		return
+	}
+	longest := 0
+	for _, li := range cfg.Lines {
+		for _, m := range li.Machines {
+			longest = max(longest, m.AutoRestoreTimeMS)
+		}
+	}
+	cfg.Global.DeadlockThresholdMS = max(120000, longest+60000)
 }

@@ -2,7 +2,9 @@ package mes
 
 import (
 	"context"
+	"errors"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -33,23 +35,37 @@ type LineRef struct {
 	DefaultCycleTimeMS []int
 }
 
-// MES simulates manufacturing execution - dispatch and progress tracking.
+// lineJobs is the part of line.Manager the MES drives: it loads a job per
+// order and reacts when the line reports the target reached.
+type lineJobs interface {
+	LoadJob(lineID string, spec line.JobSpec) (line.JobStatus, error)
+	StartJob(lineID string) (line.JobStatus, error)
+	FinishJob(lineID string) (line.JobStatus, error)
+	ScrapWIP(lineID string) (int, error)
+	Job(lineID string) (line.JobStatus, error)
+}
+
+// MES simulates manufacturing execution: it queues released orders per line,
+// runs one order per line at a time as a line job, and tracks progress.
 type MES struct {
 	mu sync.RWMutex
+
+	// dispatchMu serialises dispatch so an order is dispatched at most once.
+	dispatchMu sync.Mutex
 
 	cfg        Config
 	orders     *storage.OrderRepository
 	operations *storage.OperationRepository
 	bus        *event.Bus
 	catalog    *recipe.Catalog
-	lineMgr    *line.Manager
+	lineMgr    lineJobs
 	engine     engineAccessor
 
 	lines         map[string]*LineRef // line instance ID -> ref
 	machineToLine map[string]string   // machine ID -> line instance ID
 
 	// Round-robin tracking
-	dispatchCounters map[string]int // template -> last dispatched index
+	dispatchCounters    map[string]int      // template -> last dispatched index
 	instancesByTemplate map[string][]string // template -> []instanceID
 
 	rng *rand.Rand
@@ -62,7 +78,7 @@ type engineAccessor interface {
 
 // New creates a new MES simulator.
 func New(cfg Config, orders *storage.OrderRepository, ops *storage.OperationRepository,
-	bus *event.Bus, catalog *recipe.Catalog, lineMgr *line.Manager, engine engineAccessor) *MES {
+	bus *event.Bus, catalog *recipe.Catalog, lineMgr lineJobs, engine engineAccessor) *MES {
 	return &MES{
 		cfg:                 cfg,
 		orders:              orders,
@@ -105,22 +121,27 @@ func (m *MES) SetTimeScale(scale float64) {
 	m.cfg.TimeScale = scale
 }
 
-// Start begins the MES dispatch loop and subscribes to events.
+// Start restores running orders, subscribes to events and starts the
+// dispatch loop. Subscribe the line manager to cycle events first, so the
+// MES counts parts the line has already booked.
 func (m *MES) Start(ctx context.Context) {
-	// Restore in-progress orders from a previous run (e.g. after Docker restart).
-	// Machines start fresh with no order assignment, so we must re-assign persisted
-	// IN_PROGRESS orders and kick-start the first machine of each line.
 	m.restoreInProgressOrders()
 
-	// Subscribe to cycle complete events for progress tracking
-	m.bus.Subscribe(event.MachineCycleComplete, func(e event.Event) {
-		m.handleCycleComplete(e.MachineID, e.Data.(bool))
+	m.bus.Subscribe(event.LinePartBooked, func(e event.Event) {
+		if pb, ok := e.Data.(line.PartBooked); ok {
+			m.handlePartBooked(e.LineID, pb)
+		}
 	})
 
-	// Subscribe to order created events for auto-release + dispatch
+	m.bus.Subscribe(event.LineJobChanged, func(e event.Event) {
+		js, ok := e.Data.(line.JobStatus)
+		if ok && js.State == line.JobTargetReached {
+			m.completeOrder(js.OrderID)
+		}
+	})
+
 	m.bus.Subscribe(event.OrderCreated, func(e event.Event) {
 		if order, ok := e.Data.(*storage.Order); ok {
-			// Auto-release and dispatch
 			go m.releaseAndDispatch(order)
 		}
 	})
@@ -145,52 +166,66 @@ func (m *MES) dispatchLoop(ctx context.Context) {
 			return
 		case <-time.After(interval):
 			m.dispatchPendingOrders()
-			m.checkForDeadlocks()
 		}
 	}
 }
 
-// checkForDeadlocks runs the deadlock detector on all lines as a safety net.
-func (m *MES) checkForDeadlocks() {
+// dispatchPendingOrders is the safety net: it fills every idle line from its
+// queue.
+func (m *MES) dispatchPendingOrders() {
 	m.mu.RLock()
 	lineIDs := make([]string, 0, len(m.lines))
 	for id := range m.lines {
 		lineIDs = append(lineIDs, id)
 	}
 	m.mu.RUnlock()
+	sort.Strings(lineIDs)
 
-	for _, lineID := range lineIDs {
-		if m.lineMgr.DetectAndRecoverDeadlock(lineID) {
-			log.Warn().Str("line", lineID).Msg("MES: deadlock detected and recovered")
-		}
-	}
-}
-
-func (m *MES) dispatchPendingOrders() {
-	orders, err := m.orders.List(storage.OrderFilter{Status: "RELEASED", Limit: 10})
-	if err != nil {
-		log.Error().Err(err).Msg("MES: failed to list released orders")
-		return
-	}
-
-	for _, order := range orders {
-		m.dispatchOrder(order)
+	for _, id := range lineIDs {
+		m.tryDispatch(id)
 	}
 }
 
 func (m *MES) releaseAndDispatch(order *storage.Order) {
-	// Small delay to allow order to be committed
-	time.Sleep(10 * time.Millisecond)
-
 	if err := m.orders.UpdateStatus(order.ID, "RELEASED"); err != nil {
 		log.Error().Err(err).Msg("MES: failed to release order")
 		return
 	}
-
-	order.Status = "RELEASED"
-	m.dispatchOrder(order)
+	m.tryDispatch(order.LineInstanceID)
 }
 
+// tryDispatch starts the next queued order of a line when the line has no
+// job and no order in progress. Queue order: priority DESC, created_at ASC.
+func (m *MES) tryDispatch(lineID string) {
+	m.dispatchMu.Lock()
+	defer m.dispatchMu.Unlock()
+
+	js, err := m.lineMgr.Job(lineID)
+	if err != nil || js.State != line.JobNone {
+		return
+	}
+	if n, err := m.orders.CountByStatus(lineID, "IN_PROGRESS"); err != nil || n > 0 {
+		return
+	}
+	queue, err := m.orders.List(storage.OrderFilter{Status: "RELEASED", LineInstanceID: lineID})
+	if err != nil {
+		log.Error().Err(err).Str("line", lineID).Msg("MES: failed to list released orders")
+		return
+	}
+	if len(queue) == 0 {
+		return
+	}
+	sort.SliceStable(queue, func(i, j int) bool {
+		if queue[i].Priority != queue[j].Priority {
+			return queue[i].Priority > queue[j].Priority
+		}
+		return queue[i].CreatedAt.Before(queue[j].CreatedAt)
+	})
+	m.dispatchOrder(queue[0])
+}
+
+// dispatchOrder creates the operations of an order and runs it as the line's
+// job. Callers hold dispatchMu.
 func (m *MES) dispatchOrder(order *storage.Order) {
 	m.mu.RLock()
 	lineRef := m.lines[order.LineInstanceID]
@@ -201,80 +236,40 @@ func (m *MES) dispatchOrder(order *storage.Order) {
 		return
 	}
 
-	// Look up recipe for cycle time overrides
 	r, recipeErr := m.catalog.GetRecipe(lineRef.TemplateName, order.ProductID)
 
-	// Create operations for each stage
+	firstOpID := ""
 	for i, machineID := range lineRef.MachineIDs {
 		stage := lineRef.Stages[i]
-		opID := uuid.New().String()
-
-		// Determine planned cycle time: recipe override takes priority, then machine default
 		plannedCycleTimeMS := lineRef.DefaultCycleTimeMS[i]
 		if recipeErr == nil {
 			if ov, ok := r.StageOverrides[stage]; ok && ov.CycleTimeMS != nil {
 				plannedCycleTimeMS = *ov.CycleTimeMS
 			}
 		}
-
 		op := &storage.Operation{
-			ID:                 opID,
+			ID:                 uuid.New().String(),
 			OrderID:            order.ID,
 			MachineID:          machineID,
 			Stage:              stage,
-			Status:             "PENDING",
+			Status:             "IN_PROGRESS",
 			PlannedCycleTimeMS: plannedCycleTimeMS,
 		}
-
 		if err := m.operations.Create(op); err != nil {
-			log.Error().Err(err).Str("op", opID).Msg("MES: failed to create operation")
+			log.Error().Err(err).Str("op", op.ID).Msg("MES: failed to create operation")
 			continue
 		}
-	}
-
-	// Update order status to IN_PROGRESS
-	m.orders.UpdateStatus(order.ID, "IN_PROGRESS")
-
-	// Apply recipe overrides
-	if recipeErr == nil {
-		for i, machineID := range lineRef.MachineIDs {
-			stage := lineRef.Stages[i]
-			if ov, ok := r.StageOverrides[stage]; ok {
-				if mach := m.engine.GetMachine(machineID); mach != nil {
-					mach.ApplyRecipeOverrides(ov.ToMachineOverrides())
-				}
-			}
-		}
-	}
-
-	// Ensure a clean start: clear any stale buffer flags, drain buffers,
-	// and reset all machines to IDLE so they're ready when parts arrive.
-	l := m.lineMgr.GetLine(order.LineInstanceID)
-	if l != nil {
-		for _, b := range l.Buffers {
-			b.Clear()
-		}
-	}
-	for _, machineID := range lineRef.MachineIDs {
-		if mach := m.engine.GetMachine(machineID); mach != nil {
-			mach.SetBlockedByBuffer(false)
-			mach.SetStarvedByBuffer(false)
-			mach.SendCommand(machine.CommandReset) // STOPPED/FAULT → IDLE
-		}
-	}
-
-	// Assign order to all machines, but only start the first
-	ops, _ := m.operations.ListByOrderID(order.ID)
-	for i, machineID := range lineRef.MachineIDs {
-		mach := m.engine.GetMachine(machineID)
-		if mach == nil || i >= len(ops) {
-			continue
-		}
-		mach.AssignOrder(order.ID, ops[i].ID, order.ProductID)
 		if i == 0 {
-			mach.SendCommand(machine.CommandStart)
-			m.operations.UpdateStatus(ops[i].ID, "IN_PROGRESS")
+			firstOpID = op.ID
 		}
+	}
+
+	if err := m.runJob(order, firstOpID); err != nil {
+		log.Error().Err(err).Str("order_id", order.ID).Msg("MES: line refused the order")
+		return
+	}
+	if err := m.orders.UpdateStatus(order.ID, "IN_PROGRESS"); err != nil {
+		log.Error().Err(err).Str("order_id", order.ID).Msg("MES: failed to set order IN_PROGRESS")
 	}
 
 	log.Info().
@@ -284,200 +279,103 @@ func (m *MES) dispatchOrder(order *storage.Order) {
 		Msg("MES: order dispatched")
 }
 
-func (m *MES) handleCycleComplete(machineID string, good bool) {
-	m.mu.RLock()
-	lineID := m.machineToLine[machineID]
-	lineRef := m.lines[lineID]
-	m.mu.RUnlock()
+func (m *MES) runJob(order *storage.Order, opID string) error {
+	_, err := m.lineMgr.LoadJob(order.LineInstanceID, line.JobSpec{
+		OrderID:     order.ID,
+		OperationID: opID,
+		ProductID:   order.ProductID,
+		TargetQty:   order.PlannedQty,
+		InitialGood: order.GoodQty,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = m.lineMgr.StartJob(order.LineInstanceID)
+	return err
+}
 
-	if lineID == "" || lineRef == nil {
+// handlePartBooked updates operation and order quantities for a part the
+// line has booked. Part routing is done by the line manager.
+func (m *MES) handlePartBooked(lineID string, pb line.PartBooked) {
+	if pb.OrderID == "" {
 		return
 	}
-
-	// Route part to downstream buffer
-	m.lineMgr.HandlePartComplete(machineID, good)
-
-	// Try to start the downstream machine
-	if good {
-		m.tryStartDownstream(machineID, lineRef)
-	}
-
-	mach := m.engine.GetMachine(machineID)
-	if mach == nil {
-		return
-	}
-
-	// Non-first machines need upstream parts to continue cycling.
-	// Try to pull the next part; if the buffer is empty, pause until fed.
-	if !m.isFirstMachine(machineID, lineRef) {
-		part := m.lineMgr.TryPullFromBuffer(machineID)
-		if part == nil {
-			mach.SetStarvedByBuffer(true)
-		}
-	}
-
-	orderID, _ := mach.GetCurrentOrder()
-	if orderID == "" {
-		return
-	}
-
-	// Find the operation for this machine and order
-	op, err := m.operations.GetByMachineAndOrder(machineID, orderID)
+	op, err := m.operations.GetByMachineAndOrder(pb.MachineID, pb.OrderID)
 	if err != nil || op == nil {
 		return
 	}
-
-	// Update operation quantities
-	if good {
+	if pb.Good {
 		op.GoodQty++
 	} else {
 		op.ScrapQty++
 	}
 	m.operations.UpdateQuantities(op.ID, op.GoodQty, op.ScrapQty)
 
-	// Only update order-level quantities from the last machine (finished goods output)
-	lastMachine := m.isLastMachine(machineID, lineRef)
-	if !lastMachine {
+	if !pb.LastStage && pb.Good {
 		return
 	}
 
-	order, err := m.orders.GetByID(orderID)
+	// Order quantities come from the line job, which books every part under
+	// one lock. Incrementing here would race between machines of the line.
+	js, err := m.lineMgr.Job(lineID)
+	if err != nil || js.OrderID != pb.OrderID {
+		return
+	}
+	if err := m.orders.UpdateQuantities(pb.OrderID, js.Good, js.Scrap); err != nil {
+		log.Error().Err(err).Str("order_id", pb.OrderID).Msg("MES: updating order quantities")
+		return
+	}
+	order, err := m.orders.GetByID(pb.OrderID)
 	if err != nil {
 		return
 	}
-
-	if good {
-		m.orders.UpdateQuantities(orderID, order.GoodQty+1, order.ScrapQty)
-	} else {
-		m.orders.UpdateQuantities(orderID, order.GoodQty, order.ScrapQty+1)
-	}
-
-	// Publish progress event
 	if m.bus != nil {
 		m.bus.Publish(event.Event{
 			Type:      event.OrderProgress,
-			MachineID: machineID,
+			MachineID: pb.MachineID,
 			LineID:    lineID,
 			Data: map[string]interface{}{
-				"order_id":             orderID,
-				"good_qty":             order.GoodQty + boolToInt(good),
-				"scrap_qty":            order.ScrapQty + boolToInt(!good),
-				"planned_qty":          order.PlannedQty,
+				"order_id":              pb.OrderID,
+				"line_instance_id":      lineID,
+				"good_qty":              js.Good,
+				"scrap_qty":             js.Scrap,
+				"started_qty":           js.Started,
+				"planned_qty":           order.PlannedQty,
 				"planned_cycle_time_ms": op.PlannedCycleTimeMS,
 			},
 		})
 	}
-
-	// Check if order complete based on last machine output
-	currentGood := order.GoodQty + boolToInt(good)
-	if currentGood >= order.PlannedQty {
-		m.completeOrder(orderID)
-	}
 }
 
-// tryStartDownstream starts the next machine in the line if it's idle.
-func (m *MES) tryStartDownstream(machineID string, lineRef *LineRef) {
-	idx := -1
-	for i, id := range lineRef.MachineIDs {
-		if id == machineID {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 || idx >= len(lineRef.MachineIDs)-1 {
-		return
-	}
-
-	nextMachineID := lineRef.MachineIDs[idx+1]
-	nextMachine := m.engine.GetMachine(nextMachineID)
-	if nextMachine == nil {
-		return
-	}
-
-	state := nextMachine.GetState()
-
-	// Only pull from buffer when the downstream machine actually needs a part:
-	// - IDLE: needs a part to start
-	// - RUNNING + starved: waiting for upstream input to resume cycling
-	// Do NOT pull when RUNNING and not starved — that machine is mid-cycle
-	// and pulling would waste the part, keeping buffers perpetually empty.
-	needsPart := state == machine.StateIdle || (state == machine.StateRunning && nextMachine.IsStarvedByBuffer())
-	if !needsPart {
-		return
-	}
-
-	part := m.lineMgr.TryPullFromBuffer(nextMachineID)
-	if part == nil {
-		return
-	}
-
-	nextMachine.SetStarvedByBuffer(false)
-
-	if state == machine.StateIdle {
-		nextMachine.SendCommand(machine.CommandStart)
-	}
-
-	// Mark the operation as in-progress
-	orderID, _ := nextMachine.GetCurrentOrder()
-	if orderID != "" {
-		if op, err := m.operations.GetByMachineAndOrder(nextMachineID, orderID); err == nil && op != nil && op.Status == "PENDING" {
-			m.operations.UpdateStatus(op.ID, "IN_PROGRESS")
-		}
-	}
-}
-
-// isFirstMachine returns true if machineID is the first machine in the line.
-func (m *MES) isFirstMachine(machineID string, lineRef *LineRef) bool {
-	return len(lineRef.MachineIDs) > 0 && lineRef.MachineIDs[0] == machineID
-}
-
-// isLastMachine returns true if machineID is the last machine in the line.
-func (m *MES) isLastMachine(machineID string, lineRef *LineRef) bool {
+func isLastMachine(machineID string, lineRef *LineRef) bool {
 	return len(lineRef.MachineIDs) > 0 && lineRef.MachineIDs[len(lineRef.MachineIDs)-1] == machineID
 }
 
+// completeOrder closes an order whose line job reached its target and starts
+// the next queued order.
 func (m *MES) completeOrder(orderID string) {
-	// Mark all operations as completed
+	order, err := m.orders.GetByID(orderID)
+	if err != nil || order == nil || order.Status != "IN_PROGRESS" {
+		return
+	}
+
 	ops, _ := m.operations.ListByOrderID(orderID)
 	for _, op := range ops {
 		if op.Status != "COMPLETED" {
 			m.operations.UpdateStatus(op.ID, "COMPLETED")
 		}
 	}
-
-	// Close the order
+	final, err := m.lineMgr.FinishJob(order.LineInstanceID)
+	if err != nil {
+		log.Warn().Err(err).Str("order_id", orderID).Msg("MES: finishing line job")
+	} else if final.OrderID == orderID {
+		m.orders.UpdateQuantities(orderID, final.Good, final.Scrap)
+	}
 	m.orders.UpdateStatus(orderID, "CLOSED")
 
-	order, _ := m.orders.GetByID(orderID)
-	if order == nil {
-		return
+	if closed, err := m.orders.GetByID(orderID); err == nil {
+		order = closed
 	}
-
-	// Revert recipe overrides and clear buffer state
-	m.mu.RLock()
-	lineRef := m.lines[order.LineInstanceID]
-	m.mu.RUnlock()
-
-	if lineRef != nil {
-		// Clear buffer flags and order assignments. ClearOrder also
-		// transitions machines to IDLE synchronously (no async CommandStop
-		// that could race with the next order's CommandStart).
-		for _, machineID := range lineRef.MachineIDs {
-			if mach := m.engine.GetMachine(machineID); mach != nil {
-				mach.SetBlockedByBuffer(false)
-				mach.SetStarvedByBuffer(false)
-				mach.ClearOrder()
-			}
-		}
-		// Drain inter-stage buffers so leftovers don't block the next order
-		l := m.lineMgr.GetLine(order.LineInstanceID)
-		if l != nil {
-			for _, b := range l.Buffers {
-				b.Clear()
-			}
-		}
-	}
-
 	if m.bus != nil {
 		m.bus.Publish(event.Event{
 			Type:   event.OrderClosed,
@@ -485,116 +383,84 @@ func (m *MES) completeOrder(orderID string) {
 			Data:   order,
 		})
 	}
-
 	log.Info().
 		Str("order_id", orderID).
 		Int("good_qty", order.GoodQty).
 		Msg("MES: order completed")
+
+	m.tryDispatch(order.LineInstanceID)
 }
 
-// restoreInProgressOrders re-assigns persisted IN_PROGRESS orders to machines
-// after a restart. On a fresh start with an empty database this is a no-op.
+// restoreInProgressOrders resumes, per line, the most recently started
+// IN_PROGRESS order and puts any others back into the queue.
 func (m *MES) restoreInProgressOrders() {
 	orders, err := m.orders.List(storage.OrderFilter{Status: "IN_PROGRESS"})
 	if err != nil || len(orders) == 0 {
 		return
 	}
 
-	restored := 0
-	for _, order := range orders {
-		m.mu.RLock()
-		lineRef := m.lines[order.LineInstanceID]
-		m.mu.RUnlock()
-		if lineRef == nil {
-			continue
-		}
-
-		ops, err := m.operations.ListByOrderID(order.ID)
-		if err != nil || len(ops) == 0 {
-			continue
-		}
-
-		// Build machine->operation lookup from persisted operations
-		opByMachine := make(map[string]*storage.Operation, len(ops))
-		for _, op := range ops {
-			opByMachine[op.MachineID] = op
-		}
-
-		// Re-apply recipe overrides
-		r, recipeErr := m.catalog.GetRecipe(lineRef.TemplateName, order.ProductID)
-		if recipeErr == nil {
-			for i, machineID := range lineRef.MachineIDs {
-				stage := lineRef.Stages[i]
-				if ov, ok := r.StageOverrides[stage]; ok {
-					if mach := m.engine.GetMachine(machineID); mach != nil {
-						mach.ApplyRecipeOverrides(ov.ToMachineOverrides())
-					}
-				}
-			}
-		}
-
-		// Re-assign order to all machines and start the first one
-		for i, machineID := range lineRef.MachineIDs {
-			mach := m.engine.GetMachine(machineID)
-			if mach == nil {
-				continue
-			}
-			op := opByMachine[machineID]
-			if op == nil {
-				continue
-			}
-			mach.AssignOrder(order.ID, op.ID, order.ProductID)
-			if i == 0 {
-				mach.SendCommand(machine.CommandStart)
-			}
-		}
-		restored++
+	byLine := make(map[string][]*storage.Order)
+	for _, o := range orders {
+		byLine[o.LineInstanceID] = append(byLine[o.LineInstanceID], o)
 	}
 
-	if restored > 0 {
-		log.Info().Int("count", restored).Msg("MES: restored in-progress orders from previous run")
+	m.dispatchMu.Lock()
+	defer m.dispatchMu.Unlock()
+	for lineID, list := range byLine {
+		sort.SliceStable(list, func(i, j int) bool { return startedAt(list[i]).After(startedAt(list[j])) })
+		for _, o := range list[1:] {
+			if err := m.orders.UpdateStatus(o.ID, "RELEASED"); err == nil {
+				log.Warn().Str("order_id", o.ID).Str("line", lineID).Msg("MES: re-queued extra IN_PROGRESS order")
+			}
+		}
+
+		keep := list[0]
+		opID := ""
+		if ops, err := m.operations.ListByOrderID(keep.ID); err == nil && len(ops) > 0 {
+			opID = ops[0].ID
+		}
+		if err := m.runJob(keep, opID); err != nil {
+			log.Error().Err(err).Str("order_id", keep.ID).Msg("MES: could not restore order")
+			continue
+		}
+		log.Info().Str("order_id", keep.ID).Str("line", lineID).Msg("MES: restored in-progress order")
 	}
 }
 
-// CancelOrder stops an active order and reverts overrides.
+func startedAt(o *storage.Order) time.Time {
+	if o.StartedAt != nil {
+		return *o.StartedAt
+	}
+	return o.CreatedAt
+}
+
+// CancelOrder cancels an order. If it is running, its line job ends and its
+// work in progress is scrapped.
 func (m *MES) CancelOrder(orderID string) error {
 	order, err := m.orders.GetByID(orderID)
 	if err != nil {
 		return err
 	}
 
-	// Mark operations as cancelled
 	ops, _ := m.operations.ListByOrderID(orderID)
 	for _, op := range ops {
 		if op.Status != "COMPLETED" {
 			m.operations.UpdateStatus(op.ID, "CANCELLED")
 		}
 	}
-
-	// Cancel the order
-	m.orders.UpdateStatus(orderID, "CANCELLED")
-
-	// Revert recipe overrides, stop machines, clear buffer state and assignments
-	m.mu.RLock()
-	lineRef := m.lines[order.LineInstanceID]
-	m.mu.RUnlock()
-
-	if lineRef != nil {
-		for _, machineID := range lineRef.MachineIDs {
-			if mach := m.engine.GetMachine(machineID); mach != nil {
-				mach.SetBlockedByBuffer(false)
-				mach.SetStarvedByBuffer(false)
-				mach.ClearOrder()
-			}
-		}
-		l := m.lineMgr.GetLine(order.LineInstanceID)
-		if l != nil {
-			for _, b := range l.Buffers {
-				b.Clear()
-			}
-		}
+	if err := m.orders.UpdateStatus(orderID, "CANCELLED"); err != nil {
+		return err
 	}
 
+	if js, err := m.lineMgr.Job(order.LineInstanceID); err == nil && js.OrderID == orderID {
+		if _, err := m.lineMgr.FinishJob(order.LineInstanceID); err != nil && !errors.Is(err, line.ErrInvalidTransition) {
+			return err
+		}
+		if _, err := m.lineMgr.ScrapWIP(order.LineInstanceID); err != nil {
+			return err
+		}
+		go m.tryDispatch(order.LineInstanceID)
+	}
 	return nil
 }
 
@@ -646,11 +512,4 @@ func (m *MES) SelectLineInstance(templateName string) string {
 	default:
 		return instances[m.rng.Intn(len(instances))]
 	}
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

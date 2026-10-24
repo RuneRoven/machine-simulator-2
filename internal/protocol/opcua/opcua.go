@@ -59,12 +59,14 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}
 		msCtx, msCancel := context.WithCancel(a.ctx)
 		ms.cancel = msCancel
+		// Start listens and returns. It must finish before the update loop
+		// writes values: the library creates its subscription service in
+		// Start and panics on change notifications before that.
+		if err := ms.srv.Start(msCtx); err != nil {
+			log.Error().Err(err).Str("machine", id).Int("port", ms.port).Msg("OPC-UA server failed to start")
+			continue
+		}
 		ms.started = true
-		go func(s *machineServer, machineID string, c context.Context) {
-			if err := s.srv.Start(c); err != nil && c.Err() == nil {
-				log.Error().Err(err).Str("machine", machineID).Msg("OPC-UA server error")
-			}
-		}(ms, id, msCtx)
 	}
 	a.mu.Unlock()
 
@@ -119,7 +121,7 @@ func (a *Adapter) RegisterMachine(m machine.Machine, cfg protocol.AdapterMachine
 
 	// Create nodes for each tag definition with explicit numeric node IDs
 	nodes := make(map[string]*server.Node)
-	for _, td := range m.GetTagDefinitions() {
+	for _, td := range machine.AllTagDefinitions(m) {
 		nodeID := ua.NewNumericNodeID(ns.ID(), uint32(td.NodeID))
 
 		attrs := server.Attributes{
@@ -191,7 +193,9 @@ func (a *Adapter) updateLoop() {
 	a.mu.RLock()
 	servers := make([]*machineServer, 0, len(a.servers))
 	for _, s := range a.servers {
-		servers = append(servers, s)
+		if s.started {
+			servers = append(servers, s)
+		}
 	}
 	a.mu.RUnlock()
 

@@ -18,6 +18,7 @@ func InstantiateFromConfig(li config.LineInstanceConfig) *Line {
 
 	for _, m := range li.Machines {
 		line.MachineIDs = append(line.MachineIDs, m.ID)
+		line.Stages = append(line.Stages, m.Stage)
 	}
 
 	for _, b := range li.Buffers {

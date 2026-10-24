@@ -16,7 +16,14 @@ type GlobalConfig struct {
 	TickRateMS   int     `yaml:"tick_rate_ms"  env:"SIMULATOR_TICK_RATE_MS"`
 	LogLevel     string  `yaml:"log_level"     env:"SIMULATOR_LOG_LEVEL"`
 
+	// DeadlockThresholdMS is how long a line with a running job may show no
+	// part movement (with no machine faulted) before it is restarted. It must
+	// exceed every machine's auto_restore_time_ms. 0 derives it: the longest
+	// auto_restore_time_ms plus 60 s, at least 120 s.
+	DeadlockThresholdMS int `yaml:"deadlock_threshold_ms" env:"SIMULATOR_DEADLOCK_THRESHOLD_MS"`
+
 	API     APIConfig     `yaml:"api"`
+	Orders  OrdersConfig  `yaml:"orders"`
 	ERP     ERPConfig     `yaml:"erp"`
 	MES     MESConfig     `yaml:"mes"`
 	Webhook WebhookConfig `yaml:"webhook"`
@@ -38,11 +45,27 @@ type APIConfig struct {
 	Port int    `yaml:"port" env:"SIMULATOR_API_PORT"`
 }
 
+// Order sources.
+const (
+	OrderSourceInternal = "internal"
+	OrderSourceExternal = "external"
+)
+
+// OrdersConfig selects where orders come from.
+type OrdersConfig struct {
+	// Source is "internal" (built-in ERP and MES create and dispatch orders)
+	// or "external" (an outside MES loads jobs onto lines over OPC UA or REST).
+	Source string `yaml:"source" env:"SIMULATOR_ORDERS_SOURCE"`
+}
+
+// External reports whether orders come from outside the simulator.
+func (o OrdersConfig) External() bool { return o.Source == OrderSourceExternal }
+
 // ERPConfig holds ERP simulator settings.
 type ERPConfig struct {
-	Mode                 string `yaml:"mode"                   env:"SIMULATOR_ERP_MODE"`
-	AutoOrderIntervalMS  int    `yaml:"auto_order_interval_ms" env:"SIMULATOR_ERP_AUTO_ORDER_INTERVAL_MS"`
-	MaxBacklog           int    `yaml:"max_backlog"            env:"SIMULATOR_ERP_MAX_BACKLOG"`
+	Mode                string `yaml:"mode"                   env:"SIMULATOR_ERP_MODE"`
+	AutoOrderIntervalMS int    `yaml:"auto_order_interval_ms" env:"SIMULATOR_ERP_AUTO_ORDER_INTERVAL_MS"`
+	MaxBacklog          int    `yaml:"max_backlog"            env:"SIMULATOR_ERP_MAX_BACKLOG"`
 }
 
 // MESConfig holds MES simulator settings.
@@ -53,10 +76,10 @@ type MESConfig struct {
 
 // ProfileConfig represents a named factory profile.
 type ProfileConfig struct {
-	Name        string              `yaml:"name"`
-	Description string              `yaml:"description"`
-	Lines       []ProfileLineEntry  `yaml:"lines"`
-	Overrides   ProfileOverrides    `yaml:"overrides"`
+	Name        string             `yaml:"name"`
+	Description string             `yaml:"description"`
+	Lines       []ProfileLineEntry `yaml:"lines"`
+	Overrides   ProfileOverrides   `yaml:"overrides"`
 }
 
 // ProfileLineEntry specifies a line template and how many instances.
@@ -75,17 +98,17 @@ type LineTemplateConfig struct {
 	Name        string               `yaml:"name"`
 	Domain      string               `yaml:"domain"`
 	Description string               `yaml:"description"`
-	Machines    []MachineStageConfig  `yaml:"machines"`
-	Buffers     BufferTemplateConfig  `yaml:"buffers"`
-	Recipes     []RecipeConfig        `yaml:"recipes"`
+	Machines    []MachineStageConfig `yaml:"machines"`
+	Buffers     BufferTemplateConfig `yaml:"buffers"`
+	Recipes     []RecipeConfig       `yaml:"recipes"`
 }
 
 // MachineStageConfig defines a machine stage within a line template.
 type MachineStageConfig struct {
-	Stage    int                    `yaml:"stage"`
-	Type     string                 `yaml:"type"`
-	Role     string                 `yaml:"role"`
-	Defaults MachineDefaultsConfig  `yaml:"defaults"`
+	Stage    int                   `yaml:"stage"`
+	Type     string                `yaml:"type"`
+	Role     string                `yaml:"role"`
+	Defaults MachineDefaultsConfig `yaml:"defaults"`
 }
 
 // MachineDefaultsConfig holds default operating parameters for a machine stage.
@@ -111,10 +134,10 @@ type BufferOverrideConfig struct {
 
 // RecipeConfig defines a product recipe within a line template.
 type RecipeConfig struct {
-	ProductID      string                           `yaml:"product_id"`
-	Description    string                           `yaml:"description"`
-	PlannedQtyRange [2]int                          `yaml:"planned_qty_range"`
-	Overrides      map[int]RecipeStageOverrideConfig `yaml:"overrides"`
+	ProductID       string                            `yaml:"product_id"`
+	Description     string                            `yaml:"description"`
+	PlannedQtyRange [2]int                            `yaml:"planned_qty_range"`
+	Overrides       map[int]RecipeStageOverrideConfig `yaml:"overrides"`
 }
 
 // RecipeStageOverrideConfig holds per-stage overrides for a recipe.
@@ -132,8 +155,10 @@ type AdaptersConfig struct {
 
 // OPCUAAdapterConfig holds OPC-UA adapter settings.
 type OPCUAAdapterConfig struct {
-	Enabled      bool   `yaml:"enabled"        env:"SIMULATOR_OPCUA_ENABLED"`
-	BasePort     int    `yaml:"base_port"      env:"SIMULATOR_OPCUA_BASE_PORT"`
+	Enabled  bool `yaml:"enabled"        env:"SIMULATOR_OPCUA_ENABLED"`
+	BasePort int  `yaml:"base_port"      env:"SIMULATOR_OPCUA_BASE_PORT"`
+	// LineBasePort is the first port of the per-line job servers.
+	LineBasePort int    `yaml:"line_base_port" env:"SIMULATOR_OPCUA_LINE_BASE_PORT"`
 	UpdateRateMS int    `yaml:"update_rate_ms" env:"SIMULATOR_OPCUA_UPDATE_RATE_MS"`
 	MaxSessions  int    `yaml:"max_sessions"   env:"SIMULATOR_OPCUA_MAX_SESSIONS"`
 	Hostname     string `yaml:"hostname"       env:"SIMULATOR_OPCUA_HOSTNAME"`

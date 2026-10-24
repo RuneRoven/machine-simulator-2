@@ -42,6 +42,12 @@ var ValidTransitions = map[State][]State{
 	StateMaintenance: {StateIdle},
 }
 
+// BufferGauge is the read side of a line buffer, used for the flow tags.
+type BufferGauge interface {
+	Count() int
+	Capacity() int
+}
+
 // Machine is the interface that all machine types must implement.
 type Machine interface {
 	// Identity
@@ -124,10 +130,10 @@ type BaseMachine struct {
 	role           string
 	lineInstanceID string
 
-	state       State
-	cycleCount  int64
-	goodCount   int64
-	scrapCount  int64
+	state      State
+	cycleCount int64
+	goodCount  int64
+	scrapCount int64
 
 	// Timing
 	cycleTimeMS          int
@@ -151,14 +157,16 @@ type BaseMachine struct {
 	cycleElapsedMS   float64
 
 	// Runtime tracking
-	runStart  time.Time
-	runTimeNS int64
-	downStart time.Time
+	runStart   time.Time
+	runTimeNS  int64
+	downStart  time.Time
 	downTimeNS int64
 
 	// Buffer integration
-	blockedByBuffer  bool
-	starvedByBuffer  bool
+	blockedByBuffer bool
+	starvedByBuffer bool
+	inBuffer        BufferGauge
+	outBuffer       BufferGauge
 
 	// Fault timing
 	faultStart time.Time
@@ -195,10 +203,14 @@ func NewBaseMachine(cfg config.MachineInstanceConfig) *BaseMachine {
 	}
 }
 
-func (m *BaseMachine) ID() string             { m.mu.RLock(); defer m.mu.RUnlock(); return m.id }
-func (m *BaseMachine) Type() string            { m.mu.RLock(); defer m.mu.RUnlock(); return m.machineType }
-func (m *BaseMachine) Role() string            { m.mu.RLock(); defer m.mu.RUnlock(); return m.role }
-func (m *BaseMachine) LineInstanceID() string   { m.mu.RLock(); defer m.mu.RUnlock(); return m.lineInstanceID }
+func (m *BaseMachine) ID() string   { m.mu.RLock(); defer m.mu.RUnlock(); return m.id }
+func (m *BaseMachine) Type() string { m.mu.RLock(); defer m.mu.RUnlock(); return m.machineType }
+func (m *BaseMachine) Role() string { m.mu.RLock(); defer m.mu.RUnlock(); return m.role }
+func (m *BaseMachine) LineInstanceID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lineInstanceID
+}
 
 func (m *BaseMachine) GetState() State {
 	m.mu.RLock()
@@ -347,6 +359,31 @@ func (m *BaseMachine) SetStarvedByBuffer(starved bool) {
 	m.starvedByBuffer = starved
 }
 
+// SetFlowBuffers tells the machine which buffers feed it and take its output,
+// for the flow tags. Either may be nil (first or last stage).
+func (m *BaseMachine) SetFlowBuffers(in, out BufferGauge) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inBuffer = in
+	m.outBuffer = out
+}
+
+// addFlowValues adds the flow tag values to tags (lock held). Buffers have
+// their own lock and never call back into machines, so reading them here is
+// safe.
+func (m *BaseMachine) addFlowValues(tags map[string]interface{}) {
+	tags["starved"] = m.starvedByBuffer
+	tags["in_buffer_level"], tags["in_buffer_capacity"] = gaugeValues(m.inBuffer)
+	tags["out_buffer_level"], tags["out_buffer_capacity"] = gaugeValues(m.outBuffer)
+}
+
+func gaugeValues(g BufferGauge) (level, capacity int32) {
+	if g == nil {
+		return 0, 0
+	}
+	return int32(g.Count()), int32(g.Capacity())
+}
+
 func (m *BaseMachine) IsStarvedByBuffer() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -403,12 +440,14 @@ func (m *BaseMachine) Stop() {
 func (m *BaseMachine) GetTags() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return map[string]interface{}{
+	tags := map[string]interface{}{
 		"state":       string(m.state),
 		"cycle_count": m.cycleCount,
 		"good_count":  m.goodCount,
 		"scrap_count": m.scrapCount,
 	}
+	m.addFlowValues(tags)
+	return tags
 }
 
 // GetTagDefinitions returns base tag definitions. Subtypes should override this.
@@ -590,16 +629,16 @@ func (m *BaseMachine) setState(newState State) {
 func (m *BaseMachine) Rng() *rand.Rand { return m.rng }
 
 // Locked access helpers for subtypes that need to read base fields while holding their own lock.
-func (m *BaseMachine) GetCycleTimeMS() int          { return m.cycleTimeMS }
-func (m *BaseMachine) GetScrapRate() float64         { return m.scrapRate }
-func (m *BaseMachine) GetTimeScale() float64         { return m.timeScale }
-func (m *BaseMachine) GetRandomFactor() float64      { return m.randomFactor }
-func (m *BaseMachine) GetStateUnlocked() State       { return m.state }
-func (m *BaseMachine) GetCycleCount() int64          { return m.cycleCount }
-func (m *BaseMachine) GetGoodCount() int64           { return m.goodCount }
-func (m *BaseMachine) GetScrapCount() int64          { return m.scrapCount }
-func (m *BaseMachine) GetBlockedByBuffer() bool      { return m.blockedByBuffer }
-func (m *BaseMachine) Lock()                         { m.mu.Lock() }
-func (m *BaseMachine) Unlock()                       { m.mu.Unlock() }
-func (m *BaseMachine) RLock()                        { m.mu.RLock() }
-func (m *BaseMachine) RUnlock()                      { m.mu.RUnlock() }
+func (m *BaseMachine) GetCycleTimeMS() int      { return m.cycleTimeMS }
+func (m *BaseMachine) GetScrapRate() float64    { return m.scrapRate }
+func (m *BaseMachine) GetTimeScale() float64    { return m.timeScale }
+func (m *BaseMachine) GetRandomFactor() float64 { return m.randomFactor }
+func (m *BaseMachine) GetStateUnlocked() State  { return m.state }
+func (m *BaseMachine) GetCycleCount() int64     { return m.cycleCount }
+func (m *BaseMachine) GetGoodCount() int64      { return m.goodCount }
+func (m *BaseMachine) GetScrapCount() int64     { return m.scrapCount }
+func (m *BaseMachine) GetBlockedByBuffer() bool { return m.blockedByBuffer }
+func (m *BaseMachine) Lock()                    { m.mu.Lock() }
+func (m *BaseMachine) Unlock()                  { m.mu.Unlock() }
+func (m *BaseMachine) RLock()                   { m.mu.RLock() }
+func (m *BaseMachine) RUnlock()                 { m.mu.RUnlock() }

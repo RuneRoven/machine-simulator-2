@@ -8,6 +8,7 @@ Each machine exposes two layers of tags:
 
 1. **Base tags** (NodeID 1--6) -- present on every machine regardless of type. These cover universal concerns such as machine state, cycle counting, and buffer status.
 2. **Machine-type tags** (NodeID 7+) -- specific to each of the 27 machine types. These represent the sensors and metrics unique to that class of equipment.
+3. **Flow tags** (NodeID 1001--1005) -- present on every machine: whether it waits for a part, and the level and capacity of the buffers before and after it. They use a separate range so that existing NodeIDs never move; in the Modbus register map they come after all other tags.
 
 Tag definitions are authoritative; they are derived directly from the `GetTagDefinitions()` functions in the Go source files under `internal/machine/types/`.
 
@@ -34,6 +35,18 @@ ns=1;i=7
 ```
 
 Each machine instance runs its own OPC-UA server (or is a node within a shared server), so the same NodeID space applies independently per machine. NodeIDs 1--6 are always the base tags; NodeIDs 7+ are type-specific.
+
+---
+
+## Flow Tags
+
+| NodeID | Tag | Type | Description |
+|---|---|---|---|
+| 1001 | `starved` | Boolean | Waiting for a part: empty in-buffer, or no release at stage 1 (no running job, or target reached) |
+| 1002 | `in_buffer_level` | Int32 | Parts in the buffer feeding this machine (0 at stage 1) |
+| 1003 | `in_buffer_capacity` | Int32 | Capacity of that buffer (0 at stage 1) |
+| 1004 | `out_buffer_level` | Int32 | Parts in the buffer after this machine (0 at the last stage) |
+| 1005 | `out_buffer_capacity` | Int32 | Capacity of that buffer (0 at the last stage) |
 
 ---
 

@@ -27,9 +27,29 @@ func BaseTags() []TagDefinition {
 	}
 }
 
+// FlowTags returns the material-flow tags present on every machine. They use
+// the reserved range from NodeID 1001 so that adding them never renumbers the
+// type-specific tags (7+) that clients already address.
+func FlowTags() []TagDefinition {
+	return []TagDefinition{
+		{Name: "starved", DisplayName: "Starved", NodeID: 1001, DataType: "Boolean", Description: "Whether machine is waiting for a part (empty in-buffer, or no release at stage 1)"},
+		{Name: "in_buffer_level", DisplayName: "In-Buffer Level", NodeID: 1002, DataType: "Int32", Description: "Parts in the buffer feeding this machine (0 at stage 1)"},
+		{Name: "in_buffer_capacity", DisplayName: "In-Buffer Capacity", NodeID: 1003, DataType: "Int32", Description: "Capacity of the buffer feeding this machine (0 at stage 1)"},
+		{Name: "out_buffer_level", DisplayName: "Out-Buffer Level", NodeID: 1004, DataType: "Int32", Description: "Parts in the buffer after this machine (0 at the last stage)"},
+		{Name: "out_buffer_capacity", DisplayName: "Out-Buffer Capacity", NodeID: 1005, DataType: "Int32", Description: "Capacity of the buffer after this machine (0 at the last stage)"},
+	}
+}
+
+// AllTagDefinitions returns a machine's tag definitions followed by the flow
+// tags. Protocol adapters use it; the flow tags come last so Modbus register
+// addresses of existing tags do not move.
+func AllTagDefinitions(m Machine) []TagDefinition {
+	return append(m.GetTagDefinitions(), FlowTags()...)
+}
+
 // BaseTagValues returns the standard tag values from a BaseMachine (must be called with lock held).
 func BaseTagValues(m *BaseMachine) map[string]interface{} {
-	return map[string]interface{}{
+	tags := map[string]interface{}{
 		"state":             string(m.GetStateUnlocked()),
 		"cycle_count":       m.GetCycleCount(),
 		"good_count":        m.GetGoodCount(),
@@ -37,4 +57,6 @@ func BaseTagValues(m *BaseMachine) map[string]interface{} {
 		"cycle_time_ms":     m.GetCycleTimeMS(),
 		"blocked_by_buffer": m.GetBlockedByBuffer(),
 	}
+	m.addFlowValues(tags)
+	return tags
 }
