@@ -64,6 +64,10 @@ func Load(configDir, profileName string) (*Config, error) {
 	// 6. Apply environment variable overrides
 	applyEnvOverrides(&cfg.Global, &cfg.Adapters)
 
+	if err := applyScenario(configDir, cfg); err != nil {
+		return nil, err
+	}
+
 	// 7. Instantiate lines from profile
 	if err := instantiateLines(cfg); err != nil {
 		return nil, fmt.Errorf("instantiating lines: %w", err)
@@ -149,6 +153,9 @@ func applyEnvOverrides(global *GlobalConfig, adapters *AdaptersConfig) {
 		if f, ok := parseFloat(v); ok {
 			global.RandomFactor = f
 		}
+	}
+	if v := os.Getenv("SIMULATOR_SCENARIO"); v != "" {
+		global.Scenario = v
 	}
 	if v := os.Getenv("SIMULATOR_ORDERS_SOURCE"); v != "" {
 		global.Orders.Source = v
@@ -407,6 +414,10 @@ func LoadFromLineEnvVars(configDir string) (*Config, error) {
 
 	// 5. Apply environment variable overrides
 	applyEnvOverrides(&cfg.Global, &cfg.Adapters)
+
+	if err := applyScenario(configDir, cfg); err != nil {
+		return nil, err
+	}
 
 	// 6. Instantiate lines
 	if err := instantiateLines(cfg); err != nil {

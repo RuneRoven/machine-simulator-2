@@ -7,6 +7,7 @@ type Config struct {
 	Templates map[string]*LineTemplateConfig // keyed by template name
 	Adapters  AdaptersConfig
 	Lines     []LineInstanceConfig // instantiated from profile + templates
+	Scenario  ScenarioConfig       // applied to Templates before instantiation; zero when none
 }
 
 // GlobalConfig holds simulator-wide settings.
@@ -21,6 +22,10 @@ type GlobalConfig struct {
 	// exceed every machine's auto_restore_time_ms. 0 derives it: the longest
 	// auto_restore_time_ms plus 60 s, at least 120 s.
 	DeadlockThresholdMS int `yaml:"deadlock_threshold_ms" env:"SIMULATOR_DEADLOCK_THRESHOLD_MS"`
+
+	// Scenario names a file in config/scenarios/ that gives line templates a
+	// character (bottleneck stage, full buffer, ...). Empty: templates as is.
+	Scenario string `yaml:"scenario" env:"SIMULATOR_SCENARIO"`
 
 	API     APIConfig     `yaml:"api"`
 	Orders  OrdersConfig  `yaml:"orders"`

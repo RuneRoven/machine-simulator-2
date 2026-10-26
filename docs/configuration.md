@@ -89,6 +89,7 @@ mes:
 | Field | Env | Default | Description |
 |---|---|---|---|
 | `orders.source` | `SIMULATOR_ORDERS_SOURCE` | `internal` | `internal`: built-in ERP and MES. `external`: an outside MES loads jobs; see [Line Jobs](line-job-control.md) |
+| `scenario` | `SIMULATOR_SCENARIO` | (none) | File in `config/scenarios/` that gives line templates a character: per-stage `cycle_time_factor`, `breakdown_factor`, `scrap_factor` (scale the template and recipe values), `auto_restore_time_ms`, and buffer capacities. See `config/scenarios/demo-characters.yaml` |
 | `deadlock_threshold_ms` | `SIMULATOR_DEADLOCK_THRESHOLD_MS` | derived | No part movement for this long (no machine faulted) restarts the line. Unset: longest `auto_restore_time_ms` + 60 s, at least 120 s. Must exceed every `auto_restore_time_ms` |
 | (database path) | `SIMULATOR_DB_PATH` | `data/simulator.db` | SQLite file; `docker-compose.yaml` mounts `./data` so it survives rebuilds |
 | `adapters.opcua.line_base_port` | `SIMULATOR_OPCUA_LINE_BASE_PORT` | `4900` | First port of the per-line job servers (external mode) |
