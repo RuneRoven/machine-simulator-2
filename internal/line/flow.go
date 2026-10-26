@@ -45,6 +45,15 @@ type JobSpec struct {
 	// InitialGood seeds the good counter, used when a job is restored after a
 	// restart.
 	InitialGood int `json:"initial_good,omitempty"`
+	// Components stage 1 takes from the line-side store for every part it
+	// starts. None: the job needs no material.
+	Components []Component `json:"components,omitempty"`
+}
+
+// Component is one material a part consumes at stage 1.
+type Component struct {
+	Material string  `json:"material"`
+	PerPart  float64 `json:"per_part"`
 }
 
 // JobStatus is a snapshot of the line's job.
@@ -55,6 +64,10 @@ type JobStatus struct {
 	Scrap          int      `json:"scrap"`
 	Started        int      `json:"started"`
 	PartsInProcess int      `json:"parts_in_process"`
+	// MaterialMissing is the component stage 1 waits for, if any.
+	MaterialMissing string `json:"material_missing,omitempty"`
+	// Material is the line-side store: quantity per material.
+	Material map[string]float64 `json:"material,omitempty"`
 }
 
 // Ledger counts every part a line has started since the simulator started.
@@ -118,6 +131,11 @@ type flow struct {
 	job    *jobRun
 	ledger Ledger
 
+	// material is the line-side store. It belongs to the line, not the job,
+	// so leftovers serve the next order.
+	material        map[string]float64
+	materialMissing string
+
 	lastProgress time.Time
 	pending      []event.Event // published after mu is released
 }
@@ -131,6 +149,7 @@ func newFlow(l *Line, machines map[string]machine.Machine) *flow {
 		inWork:       make([]*Part, n),
 		held:         make([]*Part, n),
 		ledger:       Ledger{ScrappedByStage: make(map[int]int)},
+		material:     make(map[string]float64),
 		lastProgress: time.Now(),
 	}
 	for i, id := range l.MachineIDs {
@@ -235,17 +254,38 @@ func (f *flow) snapshotLedger() Ledger {
 }
 
 func (f *flow) status() JobStatus {
+	st := JobStatus{State: JobNone, Material: f.materialSnapshot()}
 	if f.job == nil {
-		return JobStatus{State: JobNone}
+		return st
 	}
-	return JobStatus{
-		JobSpec:        f.job.spec,
-		State:          f.job.state,
-		Good:           f.job.good,
-		Scrap:          f.job.scrap,
-		Started:        f.job.started,
-		PartsInProcess: f.inProcess(f.job.id),
+	st.JobSpec = f.job.spec
+	st.State = f.job.state
+	st.Good, st.Scrap, st.Started = f.job.good, f.job.scrap, f.job.started
+	st.PartsInProcess = f.inProcess(f.job.id)
+	st.MaterialMissing = f.materialMissing
+	return st
+}
+
+func (f *flow) materialSnapshot() map[string]float64 {
+	if len(f.material) == 0 {
+		return nil
 	}
+	out := make(map[string]float64, len(f.material))
+	for k, v := range f.material {
+		out[k] = v
+	}
+	return out
+}
+
+// shortOf returns the first component the line-side store cannot supply for
+// one more part, or "".
+func (f *flow) shortOf() string {
+	for _, c := range f.job.spec.Components {
+		if f.material[c.Material]+1e-9 < c.PerPart {
+			return c.Material
+		}
+	}
+	return ""
 }
 
 func (f *flow) emitJobChanged() {
@@ -280,6 +320,17 @@ func (f *flow) acquire(i int) {
 	if i == 0 {
 		if !f.gateOpen() {
 			return
+		}
+		short := f.shortOf()
+		if short != f.materialMissing {
+			f.materialMissing = short
+			f.emitJobChanged()
+		}
+		if short != "" {
+			return
+		}
+		for _, c := range f.job.spec.Components {
+			f.material[c.Material] -= c.PerPart
 		}
 		f.inWork[0] = &Part{
 			ID:        uuid.New().String(),
@@ -496,6 +547,11 @@ func (mgr *Manager) LoadJob(lineID string, spec JobSpec) (JobStatus, error) {
 	if spec.OrderID == "" || spec.ProductID == "" || spec.TargetQty < 0 {
 		return JobStatus{}, fmt.Errorf("%w: order_id and product_id are required, target_qty must be >= 0", ErrInvalidJob)
 	}
+	for _, c := range spec.Components {
+		if c.Material == "" || c.PerPart <= 0 {
+			return JobStatus{}, fmt.Errorf("%w: component %q needs a material and a positive per_part", ErrInvalidJob, c.Material)
+		}
+	}
 	if err := f.line.ValidateProduct(spec.ProductID); err != nil {
 		return JobStatus{}, err
 	}
@@ -522,6 +578,7 @@ func (mgr *Manager) LoadJob(lineID string, spec JobSpec) (JobStatus, error) {
 	}
 	j := &jobRun{id: uuid.New().String(), spec: spec, state: JobLoaded, good: spec.InitialGood}
 	f.job = j
+	f.materialMissing = ""
 
 	// Carry over leftover parts of the same product, but no more than the job
 	// still needs; the rest is purged below like another product's parts.
@@ -742,4 +799,42 @@ func (f *flow) stalled(now time.Time, threshold time.Duration) bool {
 		}
 	}
 	return hasWork
+}
+
+// AddMaterial puts material into the line-side store (staging from the
+// warehouse) and lets a waiting stage 1 go on.
+func (mgr *Manager) AddMaterial(lineID, material string, qty float64) (JobStatus, error) {
+	if material == "" || qty <= 0 {
+		return JobStatus{}, fmt.Errorf("%w: material and a positive quantity are required", ErrInvalidJob)
+	}
+	f, err := mgr.flowFor(lineID)
+	if err != nil {
+		return JobStatus{}, err
+	}
+	f.mu.Lock()
+	f.material[material] += qty
+	if f.job != nil && f.job.state == JobRunning {
+		f.lastProgress = time.Now()
+		f.kick(true)
+	}
+	if f.materialMissing != "" && f.job != nil && f.shortOf() == "" {
+		f.materialMissing = ""
+	}
+	f.emitJobChanged()
+	st := f.status()
+	ev := f.takePending()
+	f.mu.Unlock()
+	mgr.publish(ev)
+	return st, nil
+}
+
+// Material returns the line-side store.
+func (mgr *Manager) Material(lineID string) (map[string]float64, error) {
+	f, err := mgr.flowFor(lineID)
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.materialSnapshot(), nil
 }

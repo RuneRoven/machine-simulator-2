@@ -92,6 +92,8 @@ func (s *Server) Router() http.Handler {
 		r.Post("/lines/{id}/stop", s.handleStopLine)
 		r.Get("/lines/{id}/job", s.handleGetJob)
 		r.Put("/lines/{id}/job", s.handleLoadJob)
+		r.Get("/lines/{id}/material", s.handleGetMaterial)
+		r.Post("/lines/{id}/material", s.handleAddMaterial)
 		r.Post("/lines/{id}/job/{command}", s.handleJobCommand)
 
 		// Machines
@@ -263,6 +265,38 @@ func (s *Server) handleJobCommand(w http.ResponseWriter, r *http.Request) {
 		if cur, jerr := s.lineMgr.Job(id); jerr == nil {
 			js = cur
 		}
+		writeJobError(w, err, js)
+		return
+	}
+	writeJSON(w, http.StatusOK, js)
+}
+
+func (s *Server) handleGetMaterial(w http.ResponseWriter, r *http.Request) {
+	m, err := s.lineMgr.Material(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJobError(w, err, line.JobStatus{})
+		return
+	}
+	if m == nil {
+		m = map[string]float64{}
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+// handleAddMaterial stages material into the line-side store:
+// {"material": "RM-GLASS-DG", "qty": 120}.
+func (s *Server) handleAddMaterial(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Material string  `json:"material"`
+		Qty      float64 `json:"qty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	js, err := s.lineMgr.AddMaterial(id, body.Material, body.Qty)
+	if err != nil {
 		writeJobError(w, err, js)
 		return
 	}

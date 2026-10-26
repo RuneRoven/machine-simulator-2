@@ -26,6 +26,7 @@ type LineJobs interface {
 	FinishJob(lineID string) (line.JobStatus, error)
 	Job(lineID string) (line.JobStatus, error)
 	Ledger(lineID string) (line.Ledger, error)
+	AddMaterial(lineID, material string, qty float64) (line.JobStatus, error)
 }
 
 // Job commands written to the job_command node.
@@ -63,9 +64,35 @@ var lineNodes = []lineNode{
 	{14, "active_operation_id", "String", false},
 	{15, "active_product_id", "String", false},
 	{16, "active_target_qty", "Int32", false},
+	// Components of the next load: material id and quantity per part, up to four.
+	{17, "job_component_1_id", "String", true},
+	{18, "job_component_1_per_part", "Double", true},
+	{19, "job_component_2_id", "String", true},
+	{20, "job_component_2_per_part", "Double", true},
+	{21, "job_component_3_id", "String", true},
+	{22, "job_component_3_per_part", "Double", true},
+	{23, "job_component_4_id", "String", true},
+	{24, "job_component_4_per_part", "Double", true},
+	// Staging into the line-side store: write id and quantity, then
+	// material_command = 1. Every write of the command adds once.
+	{25, "material_add_id", "String", true},
+	{26, "material_add_qty", "Double", true},
+	{27, "material_command", "Int32", true},
+	{28, "material_missing", "String", false},
+	{29, "component_1_level", "Double", false},
+	{30, "component_2_level", "Double", false},
+	{31, "component_3_level", "Double", false},
+	{32, "component_4_level", "Double", false},
 }
 
-const nodeJobCommand uint32 = 5
+const (
+	nodeJobCommand      uint32 = 5
+	nodeMaterialCommand uint32 = 27
+	maxComponents              = 4
+)
+
+// CommandAddMaterial is material_command's only command.
+const CommandAddMaterial int32 = 1
 
 // jobCommand is a job_command write with the setpoints as they were at that
 // moment, so later setpoint writes cannot change a queued load.
@@ -73,6 +100,11 @@ type jobCommand struct {
 	cmd  int32
 	spec line.JobSpec
 	err  error // set when the setpoints were unusable
+
+	// material is set for a material_command write.
+	material bool
+	matID    string
+	matQty   float64
 }
 
 // writeHookNamespace wraps the line's namespace so client writes are seen in
@@ -185,9 +217,12 @@ func (ls *LineServers) Register(lineID string) int {
 	ns.nodeMu = &s.nodeMu
 	ns.onWrite = s.onClientWrite
 	for _, ln := range lineNodes {
-		if ln.dataType == "String" {
+		switch ln.dataType {
+		case "String":
 			s.set(ln.id, "")
-		} else {
+		case "Double":
+			s.set(ln.id, float64(0))
+		default:
 			s.set(ln.id, int32(0))
 		}
 	}
@@ -269,6 +304,21 @@ func (s *lineServer) setpoint(nodeID uint32) interface{} {
 func (s *lineServer) onClientWrite(nodeID uint32, v interface{}) {
 	s.mu.Lock()
 	s.setpoints[nodeID] = v
+	if nodeID == nodeMaterialCommand {
+		jc := jobCommand{material: true, matID: toString(s.setpoints[25])}
+		cmd, ok := toInt(v)
+		q, qok := toFloat(s.setpoints[26])
+		switch {
+		case !ok || int32(cmd) != CommandAddMaterial:
+			jc.err = fmt.Errorf("%w: material_command must be 1 (add)", line.ErrInvalidJob)
+		case !qok:
+			jc.err = fmt.Errorf("%w: material_add_qty must be a number", line.ErrInvalidJob)
+		}
+		jc.matQty = q
+		s.mu.Unlock()
+		s.enqueue(jc)
+		return
+	}
 	if nodeID != nodeJobCommand {
 		s.mu.Unlock()
 		return
@@ -293,9 +343,23 @@ func (s *lineServer) onClientWrite(nodeID uint32, v interface{}) {
 			ProductID:   toString(s.setpoints[3]),
 			TargetQty:   target,
 		}
+		for k := 0; k < maxComponents && jc.err == nil; k++ {
+			mat := toString(s.setpoints[uint32(17+2*k)])
+			if mat == "" {
+				continue
+			}
+			per, ok := toFloat(s.setpoints[uint32(18+2*k)])
+			if !ok {
+				jc.err = fmt.Errorf("%w: job_component_%d_per_part must be a number", line.ErrInvalidJob, k+1)
+			}
+			jc.spec.Components = append(jc.spec.Components, line.Component{Material: mat, PerPart: per})
+		}
 	}
 	s.mu.Unlock()
+	s.enqueue(jc)
+}
 
+func (s *lineServer) enqueue(jc jobCommand) {
 	select {
 	case s.commands <- jc:
 	default:
@@ -338,6 +402,14 @@ func (s *lineServer) refresh(jobs LineJobs) {
 	s.set(14, js.OperationID)
 	s.set(15, js.ProductID)
 	s.set(16, int32(js.TargetQty))
+	s.set(28, js.MaterialMissing)
+	for k := 0; k < maxComponents; k++ {
+		level := 0.0
+		if k < len(js.Components) {
+			level = js.Material[js.Components[k].Material]
+		}
+		s.set(uint32(29+k), level)
+	}
 }
 
 // handleWrites runs the queued job commands in write order.
@@ -358,6 +430,10 @@ func (s *lineServer) handleWrites(ctx context.Context, jobs LineJobs) {
 }
 
 func (s *lineServer) run(jobs LineJobs, jc jobCommand) error {
+	if jc.material {
+		_, err := jobs.AddMaterial(s.lineID, jc.matID, jc.matQty)
+		return err
+	}
 	switch jc.cmd {
 	case CommandLoad:
 		_, err := jobs.LoadJob(s.lineID, jc.spec)
@@ -424,6 +500,21 @@ func toInt(v interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func toFloat(v interface{}) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case nil:
+		return 0, false
+	}
+	if i, ok := toInt(v); ok {
+		return float64(i), true
+	}
+	return 0, false
 }
 
 func toString(v interface{}) string {

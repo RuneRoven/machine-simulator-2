@@ -128,3 +128,51 @@ func TestLineServerRepeatedCommandIsHandled(t *testing.T) {
 	clientWrite(s, 5, CommandLoad)
 	eventually(t, "reloaded", func() bool { js, _ := mgr.Job("l1"); return js.OrderID == "o2" })
 }
+
+func TestLineServerComponentsAndStaging(t *testing.T) {
+	s, mgr := newLineServerUnderTest(t)
+	writes := []struct {
+		node uint32
+		v    interface{}
+	}{
+		// stage 4 glass, then load a job that needs 1 glass and 4.4 m profile per part
+		{25, "GLASS"}, {26, float64(4)}, {27, CommandAddMaterial},
+		{1, "o1"}, {2, "0010"}, {3, "A"}, {4, int32(10)},
+		{17, "GLASS"}, {18, float64(1)}, {19, "PROFILE"}, {20, 4.4},
+		{5, CommandLoad},
+	}
+	for _, w := range writes {
+		if st := clientWrite(s, w.node, w.v); st != ua.StatusOK {
+			t.Fatalf("write node %d: %v", w.node, st)
+		}
+	}
+	eventually(t, "job loaded with components", func() bool {
+		js, _ := mgr.Job("l1")
+		return js.State == line.JobLoaded && len(js.Components) == 2
+	})
+	js, _ := mgr.Job("l1")
+	if js.Components[1] != (line.Component{Material: "PROFILE", PerPart: 4.4}) || js.Material["GLASS"] != 4 {
+		t.Fatalf("job %+v, want PROFILE 4.4 per part and 4 glass on the line", js)
+	}
+	// Writing the command again with the same value stages again.
+	if st := clientWrite(s, 27, CommandAddMaterial); st != ua.StatusOK {
+		t.Fatal(st)
+	}
+	eventually(t, "8 glass", func() bool { m, _ := mgr.Material("l1"); return m["GLASS"] == 8 })
+	if st := clientWrite(s, 5, CommandStart); st != ua.StatusOK {
+		t.Fatal(st)
+	}
+	// No profile on the line: stage 1 waits, and the node says why.
+	eventually(t, "material_missing PROFILE", func() bool {
+		s.refresh(mgr)
+		s.nodeMu.Lock()
+		defer s.nodeMu.Unlock()
+		return s.nodes[28].Value().Value.Value() == "PROFILE"
+	})
+	if got := s.setpoint(nodeMaterialCommand); got != CommandAddMaterial {
+		t.Errorf("material_command reads %v, want %d (kept for the read-back)", got, CommandAddMaterial)
+	}
+	if st := clientWrite(s, 29, float64(1)); st != ua.StatusBadUserAccessDenied {
+		t.Errorf("write to component_1_level: %v, want BadUserAccessDenied", st)
+	}
+}

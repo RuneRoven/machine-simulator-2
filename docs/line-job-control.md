@@ -62,6 +62,12 @@ One server per line instance on `adapters.opcua.line_base_port + index` (default
 | 11 | `parts_in_process` | Int32 | R | parts of the job in machines and buffers |
 | 12 | `wip_scrapped` | Int32 | R | line total |
 | 13–16 | `active_order_id`, `active_operation_id`, `active_product_id`, `active_target_qty` | | R | the job the line actually runs |
+| 17–24 | `job_component_<k>_id` (String), `job_component_<k>_per_part` (Double), k = 1–4 | | RW | components of the next load |
+| 25 | `material_add_id` | String | RW | material to stage into the line-side store |
+| 26 | `material_add_qty` | Double | RW | quantity to stage |
+| 27 | `material_command` | Int32 | RW | 1 = add `material_add_qty` of `material_add_id`; every write adds once |
+| 28 | `material_missing` | String | R | component stage 1 waits for, empty when none |
+| 29–32 | `component_<k>_level` | Double | R | line-side stock of the job's components |
 
 Rules for clients:
 
@@ -86,15 +92,29 @@ output:
       - {nodeId: "ns=1;i=5", valueFrom: "cmd", dataType: "Int32"}
 ```
 
+## Line-side material
+
+A job may list up to four components with a quantity per part. The line keeps a
+line-side store per material (it belongs to the line, so leftovers serve the
+next job). Stage 1 takes the components for every part it starts, scrap
+included; when one is short, stage 1 waits, `material_missing` names it, and the
+line runs on as soon as material is staged. A job without components needs no
+material. The store is held in memory: a simulator restart empties it.
+
+Staging over OPC UA: write `material_add_id`, `material_add_qty`, then
+`material_command = 1`. Over REST: `POST /api/lines/{id}/material`.
+
 ## REST
 
 | Method | Path | Body / result |
 |---|---|---|
 | `GET` | `/api/lines/{id}/job` | job status |
-| `PUT` | `/api/lines/{id}/job` | `{"order_id","operation_id","product_id","target_qty"}` → job status |
+| `PUT` | `/api/lines/{id}/job` | `{"order_id","operation_id","product_id","target_qty","components":[{"material","per_part"}]}` → job status |
 | `POST` | `/api/lines/{id}/job/start` | job status |
 | `POST` | `/api/lines/{id}/job/interrupt` | job status |
 | `POST` | `/api/lines/{id}/job/finish` | `{"job": <now NO_JOB>, "finished": <final status>}` |
+| `GET` | `/api/lines/{id}/material` | line-side store: `{material: qty}` |
+| `POST` | `/api/lines/{id}/material` | `{"material","qty"}` → job status |
 
 Errors: 404 unknown line, 409 illegal transition, 400 unknown product or invalid job. The body is `{"error": "...", "job": <current status>}`.
 
