@@ -838,3 +838,18 @@ func (mgr *Manager) Material(lineID string) (map[string]float64, error) {
 	defer f.mu.Unlock()
 	return f.materialSnapshot(), nil
 }
+
+// RestoreMaterial replaces the line-side store, for loading it at start.
+func (mgr *Manager) RestoreMaterial(lineID string, stock map[string]float64) error {
+	f, err := mgr.flowFor(lineID)
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.material = make(map[string]float64, len(stock))
+	for k, v := range stock {
+		f.material[k] = v
+	}
+	return nil
+}

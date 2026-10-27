@@ -99,7 +99,9 @@ line-side store per material (it belongs to the line, so leftovers serve the
 next job). Stage 1 takes the components for every part it starts, scrap
 included; when one is short, stage 1 waits, `material_missing` names it, and the
 line runs on as soon as material is staged. A job without components needs no
-material. The store is held in memory: a simulator restart empties it.
+material. The store survives a restart: it is saved every 5 s and at shutdown
+in the simulator database (`SIMULATOR_DB_PATH`, default `data/simulator.db`), so
+a hard kill loses at most the last 5 s of consumption.
 
 Staging over OPC UA: write `material_add_id`, `material_add_qty`, then
 `material_command = 1`. Over REST: `POST /api/lines/{id}/material`.

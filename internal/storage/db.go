@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS operations (
     completed_at TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS line_material (
+    line_instance_id TEXT NOT NULL,
+    material TEXT NOT NULL,
+    qty REAL NOT NULL,
+    PRIMARY KEY (line_instance_id, material)
+);
+
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_line_instance ON orders(line_instance_id);
 CREATE INDEX IF NOT EXISTS idx_operations_order_id ON operations(order_id);
