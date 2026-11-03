@@ -31,6 +31,9 @@ const (
 	CommandReset       Command = "RESET"
 	CommandFault       Command = "FAULT"
 	CommandMaintenance Command = "MAINTENANCE"
+	// CommandIdle takes a running machine to IDLE: it has nothing to work on
+	// (its line waits for material). START runs it again.
+	CommandIdle Command = "IDLE"
 )
 
 // ValidTransitions defines allowed state transitions.
@@ -484,6 +487,10 @@ func (m *BaseMachine) processCommand(cmd Command) {
 	case CommandMaintenance:
 		if m.canTransition(StateMaintenance) {
 			m.setState(StateMaintenance)
+		}
+	case CommandIdle:
+		if m.state == StateRunning {
+			m.setState(StateIdle)
 		}
 	}
 }

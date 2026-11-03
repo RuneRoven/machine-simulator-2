@@ -367,6 +367,12 @@ func (f *flow) kick(startIdle bool) {
 		}
 		m.SetBlockedByBuffer(f.held[i] != nil)
 		m.SetStarvedByBuffer(f.inWork[i] == nil && f.held[i] == nil)
+		// Out of material, the line stands: a machine with nothing left to work
+		// on goes IDLE instead of running empty, so its state shows the stop.
+		if f.materialMissing != "" && f.inWork[i] == nil && f.held[i] == nil && m.GetState() == machine.StateRunning {
+			_ = m.SendCommand(machine.CommandIdle)
+			continue
+		}
 		if !startIdle || f.inWork[i] == nil {
 			continue
 		}
@@ -782,6 +788,10 @@ func (f *flow) stalled(now time.Time, threshold time.Duration) bool {
 		return false
 	}
 	if now.Sub(f.lastProgress) < threshold {
+		return false
+	}
+	if f.materialMissing != "" {
+		// Waiting for material is a stop with a cause, not a stall.
 		return false
 	}
 	hasWork := f.gateOpen()

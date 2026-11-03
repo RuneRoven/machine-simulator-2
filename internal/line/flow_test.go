@@ -399,3 +399,35 @@ func TestRunningLineConservesParts(t *testing.T) {
 		t.Fatalf("delivered %d, want 25 (ledger %+v)", led.DeliveredGood, led)
 	}
 }
+
+// A line out of material stands still: its emptied machines go IDLE, so a stop
+// detector sees the line stand, and the stall watchdog leaves it alone. Staging
+// material starts it again.
+func TestShortLineGoesIdleAndRestartsWithMaterial(t *testing.T) {
+	mgr, _, bms := newTestLine(t, 2, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, m := range bms {
+		m.SetOnPartComplete(func(id string, good bool) { mgr.OnCycleComplete(id, good) }) // as the engine wires it
+		go m.Start(ctx)
+	}
+	if _, err := mgr.AddMaterial("l1", "GLASS", 2); err != nil {
+		t.Fatal(err)
+	}
+	mustLoadStart(t, mgr, JobSpec{OrderID: "o1", ProductID: "A", TargetQty: 5,
+		Components: []Component{{Material: "GLASS", PerPart: 1}}})
+
+	waitFor(t, func() bool { js := mustJob(t, mgr); return js.Good == 2 && js.MaterialMissing == "GLASS" })
+	waitFor(t, func() bool {
+		return bms[0].GetState() == machine.StateIdle && bms[1].GetState() == machine.StateIdle
+	})
+	if got := mgr.CheckStalls(time.Now().Add(time.Hour), time.Minute); len(got) != 0 {
+		t.Fatalf("recovered %v while waiting for material, want none", got)
+	}
+
+	if _, err := mgr.AddMaterial("l1", "GLASS", 3); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return mustJob(t, mgr).State == JobTargetReached })
+	mustLedger(t, mgr)
+}
